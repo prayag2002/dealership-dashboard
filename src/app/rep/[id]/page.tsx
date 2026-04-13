@@ -10,7 +10,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
@@ -32,6 +31,7 @@ import {
   Users,
   Timer,
 } from 'lucide-react';
+import SafeResponsiveContainer from '../../../components/charts/SafeResponsiveContainer';
 
 export default function RepPage() {
   const params = useParams();
@@ -162,7 +162,7 @@ export default function RepPage() {
             <span className="card-title">Monthly Performance</span>
           </div>
           <div className="chart-container-sm">
-            <ResponsiveContainer width="100%" height="100%">
+            <SafeResponsiveContainer>
               <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
                 <XAxis
@@ -188,7 +188,7 @@ export default function RepPage() {
                 <Bar dataKey="deliveredLeads" name="Delivered" fill="#059669" radius={[4, 4, 0, 0]} barSize={24} />
                 <Bar dataKey="newLeads" name="New Leads" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={24} opacity={0.3} />
               </BarChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
         </div>
 
@@ -198,7 +198,7 @@ export default function RepPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 160, height: 160 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <SafeResponsiveContainer>
                 <PieChart>
                   <Pie
                     data={statusData}
@@ -222,7 +222,7 @@ export default function RepPage() {
                     }}
                   />
                 </PieChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             </div>
             <div style={{ flex: 1, fontSize: 12 }}>
               {statusData.map((s) => (
@@ -260,9 +260,9 @@ export default function RepPage() {
                 {repLeads.map((lead) => {
                   const statusColor =
                     lead.status === 'delivered' ? 'badge-emerald' :
-                    lead.status === 'lost' ? 'badge-rose' :
-                    lead.status === 'order_placed' ? 'badge-emerald' :
-                    'badge-blue';
+                      lead.status === 'lost' ? 'badge-rose' :
+                        lead.status === 'order_placed' ? 'badge-emerald' :
+                          'badge-blue';
                   return (
                     <tr key={lead.id}>
                       <td style={{ fontWeight: 500 }}>{lead.customer_name}</td>

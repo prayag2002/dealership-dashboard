@@ -7,11 +7,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts';
 import type { MonthlyData } from '../../lib/types';
 import { formatCurrency } from '../../lib/utils';
+import SafeResponsiveContainer from '../charts/SafeResponsiveContainer';
 
 interface TargetProgressProps {
   data: MonthlyData[];
@@ -42,7 +41,7 @@ export default function TargetProgress({ data }: TargetProgressProps) {
         <span className="card-subtitle">Units delivered per month</span>
       </div>
       <div className="chart-container">
-        <ResponsiveContainer width="100%" height="100%">
+        <SafeResponsiveContainer>
           <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
             <XAxis
@@ -74,7 +73,7 @@ export default function TargetProgress({ data }: TargetProgressProps) {
               barSize={28}
             />
           </BarChart>
-        </ResponsiveContainer>
+        </SafeResponsiveContainer>
       </div>
     </div>
   );

@@ -7,11 +7,11 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   Cell,
 } from 'recharts';
 import type { SourceMetrics } from '../../lib/types';
 import { formatPercent } from '../../lib/utils';
+import SafeResponsiveContainer from '../charts/SafeResponsiveContainer';
 
 interface SourcePerformanceProps {
   data: SourceMetrics[];
@@ -45,7 +45,7 @@ export default function SourcePerformance({ data }: SourcePerformanceProps) {
         <span className="card-subtitle">Conversion rate by source</span>
       </div>
       <div className="chart-container-sm">
-        <ResponsiveContainer width="100%" height="100%">
+        <SafeResponsiveContainer>
           <BarChart
             data={data}
             layout="vertical"
@@ -75,7 +75,7 @@ export default function SourcePerformance({ data }: SourcePerformanceProps) {
               ))}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+        </SafeResponsiveContainer>
       </div>
       {bestSource && worstSource && (
         <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--text-secondary)' }}>

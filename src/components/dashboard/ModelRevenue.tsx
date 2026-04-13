@@ -7,10 +7,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
 } from 'recharts';
 import { formatCurrency } from '../../lib/utils';
 import { CHART_COLORS } from '../../lib/utils';
+import SafeResponsiveContainer from '../charts/SafeResponsiveContainer';
 
 interface ModelRevenueProps {
   data: { model: string; revenue: number; units: number; avgValue: number }[];
@@ -39,7 +39,7 @@ export default function ModelRevenue({ data }: ModelRevenueProps) {
         <span className="card-subtitle">Delivered vehicles</span>
       </div>
       <div className="chart-container-sm">
-        <ResponsiveContainer width="100%" height="100%">
+        <SafeResponsiveContainer>
           <BarChart
             data={data}
             layout="vertical"
@@ -69,7 +69,7 @@ export default function ModelRevenue({ data }: ModelRevenueProps) {
               barSize={24}
             />
           </BarChart>
-        </ResponsiveContainer>
+        </SafeResponsiveContainer>
       </div>
     </div>
   );

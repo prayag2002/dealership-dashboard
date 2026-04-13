@@ -4,11 +4,11 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
   Tooltip,
 } from 'recharts';
 import type { LostReasonMetrics } from '../../lib/types';
 import { formatCurrency, formatPercent } from '../../lib/utils';
+import SafeResponsiveContainer from '../charts/SafeResponsiveContainer';
 
 interface LostAnalysisProps {
   reasons: LostReasonMetrics[];
@@ -40,7 +40,7 @@ export default function LostAnalysis({ reasons, totalLostRevenue }: LostAnalysis
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <div style={{ width: 160, height: 160, flexShrink: 0 }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer>
             <PieChart>
               <Pie
                 data={reasons}
@@ -58,7 +58,7 @@ export default function LostAnalysis({ reasons, totalLostRevenue }: LostAnalysis
               </Pie>
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </div>
         <div style={{ flex: 1, fontSize: 12 }}>
           {reasons.slice(0, 5).map((r, i) => (
