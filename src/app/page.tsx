@@ -1,0 +1,114 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import type { DealershipData } from '../lib/types';
+import { loadData } from '../lib/data-loader';
+import { useFilterStore } from '../store/filters';
+import {
+  computeKpis,
+  computeBranchMetrics,
+  computeMonthlyData,
+  computeFunnel,
+  computeSourceMetrics,
+  computeModelRevenue,
+} from '../lib/calculations';
+import { generateAlerts, generateNetworkSummary } from '../lib/insights-engine';
+
+import DateRangePicker from '../components/layout/DateRangePicker';
+import KpiCards from '../components/dashboard/KpiCards';
+import BranchScoreboard from '../components/dashboard/BranchScoreboard';
+import RevenueTrend from '../components/dashboard/RevenueTrend';
+import ConversionFunnel from '../components/dashboard/ConversionFunnel';
+import AlertsPanel from '../components/dashboard/AlertsPanel';
+import ModelRevenue from '../components/dashboard/ModelRevenue';
+import SourcePerformance from '../components/dashboard/SourcePerformance';
+import { Sparkles } from 'lucide-react';
+
+export default function OverviewPage() {
+  const [data, setData] = useState<DealershipData | null>(null);
+  const { dateRange } = useFilterStore();
+
+  useEffect(() => {
+    loadData().then(setData);
+  }, []);
+
+  if (!data) {
+    return (
+      <div className="page-container">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: 40, height: 40, border: '3px solid var(--border-primary)', borderTopColor: 'var(--color-blue)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Loading dashboard data...</p>
+          </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  const kpis = computeKpis(data, dateRange);
+  const branchMetrics = computeBranchMetrics(data, dateRange);
+  const monthlyData = computeMonthlyData(data, dateRange);
+  const funnelData = computeFunnel(data, dateRange);
+  const sourceMetrics = computeSourceMetrics(data, dateRange);
+  const modelRevenue = computeModelRevenue(data, dateRange);
+  const alerts = generateAlerts(data, dateRange);
+  const networkSummary = generateNetworkSummary(data, dateRange);
+
+  return (
+    <div className="page-container">
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Executive Overview</h1>
+          <p className="page-description">Network performance at a glance · Jun–Dec 2025</p>
+        </div>
+        <DateRangePicker />
+      </div>
+
+      {/* Network Summary */}
+      <div className="section">
+        <div className="summary-callout animate-in">
+          <div className="summary-label">
+            <Sparkles size={14} />
+            Performance Summary
+          </div>
+          <p>{networkSummary}</p>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="section">
+        <KpiCards data={kpis} />
+      </div>
+
+      {/* Branch Scoreboard */}
+      <div className="section">
+        <div className="section-header">
+          <div>
+            <h2 className="section-title">Branch Performance</h2>
+            <p className="section-subtitle">Click a branch to see detailed analysis</p>
+          </div>
+        </div>
+        <BranchScoreboard metrics={branchMetrics} />
+      </div>
+
+      {/* Revenue Trend + Conversion Funnel */}
+      <div className="section two-col">
+        <RevenueTrend data={monthlyData} />
+        <ConversionFunnel stages={funnelData} />
+      </div>
+
+      {/* Alerts + Model Revenue */}
+      <div className="section two-col">
+        <AlertsPanel alerts={alerts} />
+        <ModelRevenue data={modelRevenue} />
+      </div>
+
+      {/* Source Performance */}
+      <div className="section">
+        <SourcePerformance data={sourceMetrics} />
+      </div>
+    </div>
+  );
+}
