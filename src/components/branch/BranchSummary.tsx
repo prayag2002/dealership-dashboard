@@ -11,7 +11,7 @@ export default function BranchSummary({ summary }: BranchSummaryProps) {
     <div className="summary-callout animate-in">
       <div className="summary-label">
         <Sparkles size={14} />
-        AI-Powered Branch Analysis
+        Smart Branch Analysis
       </div>
       <p>{summary}</p>
     </div>

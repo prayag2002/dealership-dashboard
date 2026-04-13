@@ -60,10 +60,10 @@ export default function TargetProgress({ data }: TargetProgressProps) {
             <Bar
               dataKey="targetUnits"
               name="Target Units"
-              fill="var(--border-primary)"
+              fill="#94a3b8"
               radius={[4, 4, 0, 0]}
               barSize={28}
-              opacity={0.4}
+              opacity={0.5}
             />
             <Bar
               dataKey="actualUnits"
