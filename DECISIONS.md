@@ -58,17 +58,8 @@ The slider caps at whatever gets you to 100% conversion — you can't model impo
 
 ### Expected Close Date Tracking
 
-The `expected_close_date` field existed in the data but wasn't being used. This felt like a missed opportunity — it's a natural indicator of pipeline health.
+The `expected_close_date` field a natural indicator of pipeline health. I used it to flag "overdue" leads: pipeline leads where the expected close date has passed but the deal hasn't progressed beyond negotiation. These leads get sorted to the top of the pipeline table with an OVERDUE badge and highlighted rows. The insight engine also fires an alert when multiple leads are overdue, calculating the total revenue at risk.
 
-I used it to flag "overdue" leads: pipeline leads where the expected close date has passed but the deal hasn't progressed beyond negotiation. These leads get sorted to the top of the pipeline table with an OVERDUE badge and highlighted rows. The insight engine also fires an alert when multiple leads are overdue, calculating the total revenue at risk.
-
-One important nuance: leads with `status: 'order_placed'` are explicitly excluded from overdue detection. If a customer has already placed an order, the deal is effectively closed — it's just waiting for delivery.
-
-### Lost Reason Handling
-
-Some lost leads in the dataset have `lost_reason: null`. The original code silently dropped these from the lost reason breakdown, which meant the chart totals didn't match the actual lost count. I mapped null to "Unknown" so every lost lead is accounted for. Small fix, but it matters for data integrity.
-
----
 
 ## State Management
 
@@ -117,7 +108,7 @@ If this were evolving into a production product:
 
 1. **Live data integration** — Replace static JSON with a WebSocket pipeline from the dealership CRM. The Zustand store already accepts `setData()`, so the rendering layer doesn't change.
 2. **Multi-tenant isolation** — Each dealership network gets its own data. The dataset-agnostic architecture means the code doesn't need per-tenant customization.
-3. **Scheduled alerts** — The alert engine already generates structured `Alert` objects with severity levels. Adding email/Slack notifications is a delivery layer, not a logic change.
+3. **Scheduled alerts** — The alert engine already generates structured `Alert` objects with severity levels. Adding a delivery layer which sends email/Slack notifications can be beneficial to business.
 4. **PDF export** — The summary + KPIs would make a good board report. The deterministic engine ensures consistent quality across exports.
 5. **Field-optimized mobile view** — Current layout is responsive, but a dedicated mobile experience would prioritize pipeline alerts and overdue follow-ups for managers on the go.
 

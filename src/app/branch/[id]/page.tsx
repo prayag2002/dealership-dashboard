@@ -91,9 +91,7 @@ export default function BranchPage() {
   const delayMetrics = computeDelayMetrics(data, branchId);
   const pipelineLeads = getActivePipelineLeads(data, branchId);
   const branchSummary = generateBranchSummary(data, branchId, dateRange);
-  const alerts = generateAlerts(data, dateRange).filter(
-    (a) => !a.branch || a.branch === branchId
-  );
+  const alerts = generateAlerts(data, dateRange, branchId);
   const totalLostRevenue = lostReasons.reduce((sum, r) => sum + r.revenue, 0);
 
   const kpis = [

@@ -60,6 +60,11 @@ export default function ConversionFunnel({ stages }: ConversionFunnelProps) {
             </div>
           );
         })}
+        <div style={{ marginTop: 12, borderTop: '1px solid var(--border-light)', paddingTop: 12, paddingBottom: 4 }}>
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: 0, lineHeight: 1.4 }}>
+            * Note: Percentages inside the bars indicate survival from the initial total new leads. Red arrows show the drop-off rate directly from the preceding stage.
+          </p>
+        </div>
       </div>
     </div>
   );

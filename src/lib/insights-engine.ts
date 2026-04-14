@@ -10,6 +10,7 @@ import {
   computeModelRevenue,
   getActivePipelineLeads,
   filterLeadsByDateRange,
+  computeRepMetrics,
 } from './calculations';
 import { formatCurrency, formatPercent } from './utils';
 import { getReferenceDate } from '../store/filters';
@@ -18,7 +19,8 @@ import { getReferenceDate } from '../store/filters';
 
 export function generateAlerts(
   data: DealershipData,
-  range: DateRange
+  range: DateRange,
+  branchId?: string
 ): Alert[] {
   const alerts: Alert[] = [];
   const branchMetrics = computeBranchMetrics(data, range);
@@ -29,22 +31,27 @@ export function generateAlerts(
     branchMetrics.reduce((sum, b) => sum + b.conversionRate, 0) / branchMetrics.length;
 
   // 1. Critically underperforming branches
-  branchMetrics.forEach((bm) => {
-    if (bm.conversionRate < avgConversion * 0.5 && bm.totalLeads > 10) {
-      alerts.push({
-        id: `critical-conv-${bm.branch.id}`,
-        severity: 'critical',
-        title: `${bm.branch.name} conversion rate is critically low`,
-        description: `${formatPercent(bm.conversionRate)} conversion (network avg: ${formatPercent(avgConversion)}). ${bm.lost} of ${bm.totalLeads} leads lost. Immediate intervention recommended.`,
-        branch: bm.branch.id,
-      });
-    }
-  });
+  if (!branchId) {
+    branchMetrics.forEach((bm) => {
+      if (bm.conversionRate < avgConversion * 0.5 && bm.totalLeads > 10) {
+        alerts.push({
+          id: `critical-conv-${bm.branch.id}`,
+          severity: 'critical',
+          title: `${bm.branch.name} conversion rate is critically low`,
+          description: `${formatPercent(bm.conversionRate)} conversion (network avg: ${formatPercent(avgConversion)}). ${bm.lost} of ${bm.totalLeads} leads lost. Immediate intervention recommended.`,
+          branch: bm.branch.id,
+        });
+      }
+    });
+  }
 
-  // 2. Cold leads — active leads with no activity for 7+ days
+  // 2. Cold leads — active leads in pre-order stages with no activity for 7+ days
   const refDate = getReferenceDate(data);
-  const allPipelineLeads = getActivePipelineLeads(data);
-  const coldLeads = allPipelineLeads.filter((l) => l.daysSinceActivity >= 7);
+  const allPipelineLeads = getActivePipelineLeads(data, branchId);
+  const preOrderStages = ['new', 'contacted', 'test_drive', 'negotiation'];
+  const coldLeads = allPipelineLeads.filter(
+    (l) => preOrderStages.includes(l.status) && l.daysSinceActivity >= 7
+  );
   if (coldLeads.length > 0) {
     const coldByBranch = new Map<string, number>();
     coldLeads.forEach((l) => {
@@ -67,23 +74,24 @@ export function generateAlerts(
     });
   }
 
-  // 3. Source channel inefficiency (dynamic — not hardcoded to specific sources)
-  const sourceMetrics = computeSourceMetrics(data, range);
+  // 3. Source channel inefficiency
+  const sourceMetrics = computeSourceMetrics(data, range, branchId);
   if (sourceMetrics.length >= 2) {
     const worstSource = sourceMetrics[sourceMetrics.length - 1];
     const bestSource = sourceMetrics[0];
     if (bestSource.conversionRate > worstSource.conversionRate * 2 && worstSource.total >= 5) {
       alerts.push({
-        id: 'source-inefficiency',
+        id: branchId ? `source-inefficiency-${branchId}` : 'source-inefficiency',
         severity: 'warning',
         title: `${worstSource.label} leads convert poorly`,
         description: `${formatPercent(worstSource.conversionRate)} conversion vs ${formatPercent(bestSource.conversionRate)} for ${bestSource.label}. Consider re-evaluating ${worstSource.label} ad spend.`,
+        branch: branchId,
       });
     }
   }
 
   // 4. Top performing branches (positive alerts)
-  if (branchMetrics.length > 0) {
+  if (!branchId && branchMetrics.length > 0) {
     const bestBranch = branchMetrics.reduce((best, bm) =>
       bm.conversionRate > best.conversionRate ? bm : best
     );
@@ -99,41 +107,45 @@ export function generateAlerts(
   }
 
   // 5. Improving branch trend
-  branchMetrics
-    .filter((bm) => bm.trend === 'up')
-    .forEach((bm) => {
-      alerts.push({
-        id: `trending-up-${bm.branch.id}`,
-        severity: 'positive',
-        title: `${bm.branch.name} is trending upward`,
-        description: `Delivery rate improved in recent months. ${bm.delivered} total deliveries with ${formatCurrency(bm.revenue, true)} revenue.`,
-        branch: bm.branch.id,
+  if (!branchId) {
+    branchMetrics
+      .filter((bm) => bm.trend === 'up')
+      .forEach((bm) => {
+        alerts.push({
+          id: `trending-up-${bm.branch.id}`,
+          severity: 'positive',
+          title: `${bm.branch.name} is trending upward`,
+          description: `Delivery rate improved in recent months. ${bm.delivered} total deliveries with ${formatCurrency(bm.revenue, true)} revenue.`,
+          branch: bm.branch.id,
+        });
       });
-    });
+  }
 
   // 6. Any lost reason that accounts for ≥15% of all lost deals (dynamic)
-  const lostReasons = computeLostReasons(data, range);
+  const lostReasons = computeLostReasons(data, range, branchId);
   const totalLost = lostReasons.reduce((sum, r) => sum + r.count, 0);
   lostReasons.forEach((r) => {
-    if (r.count >= 10 && r.percentage >= 15 && r.reason !== 'Unknown') {
+    if (r.count >= (branchId ? 3 : 10) && r.percentage >= 15 && r.reason !== 'Unknown') {
       alerts.push({
-        id: `lost-reason-${r.reason.toLowerCase().replace(/\s+/g, '-')}`,
+        id: branchId ? `lost-reason-${branchId}-${r.reason.toLowerCase()}` : `lost-reason-${r.reason.toLowerCase()}`,
         severity: 'warning',
         title: `${r.count} deals lost: "${r.reason}"`,
         description: `${formatCurrency(r.revenue, true)} in potential revenue lost. This accounts for ${formatPercent(r.percentage, 0)} of all lost deals.`,
+        branch: branchId,
       });
     }
   });
 
-  // 7. Overdue pipeline leads (uses expected_close_date)
+  // 7. Overdue pipeline leads
   const overdueLeads = allPipelineLeads.filter((l) => l.isOverdue);
-  if (overdueLeads.length >= 3) {
+  if (overdueLeads.length >= (branchId ? 2 : 3)) {
     const overdueValue = overdueLeads.reduce((sum, l) => sum + l.deal_value, 0);
     alerts.push({
-      id: 'overdue-pipeline',
+      id: branchId ? `overdue-pipeline-${branchId}` : 'overdue-pipeline',
       severity: 'warning',
       title: `${overdueLeads.length} leads past expected close date`,
       description: `${formatCurrency(overdueValue, true)} in pipeline at risk of slipping. These deals were expected to close already — escalate follow-ups.`,
+      branch: branchId,
     });
   }
 
@@ -204,26 +216,17 @@ export function generateBranchSummary(
   }
 
   // Top rep spotlight
-  const leads = filterLeadsByDateRange(
-    data.leads.filter(l => l.branch_id === branchId),
-    range
-  );
-  const repMap = new Map<string, { delivered: number; total: number; name: string }>();
-  leads.forEach(l => {
-    const rep = data.sales_reps.find(r => r.id === l.assigned_to);
-    if (!rep || rep.role === 'branch_manager') return;
-    const existing = repMap.get(rep.id) || { delivered: 0, total: 0, name: rep.name };
-    existing.total++;
-    if (l.status === 'delivered') existing.delivered++;
-    repMap.set(rep.id, existing);
-  });
-  const topRep = Array.from(repMap.values())
-    .filter(r => r.total >= 5)
-    .sort((a, b) => (b.delivered / b.total) - (a.delivered / a.total))[0];
-  if (topRep) {
-    parts.push(
-      `Top performer: ${topRep.name} with ${formatPercent((topRep.delivered / topRep.total) * 100)} conversion (${topRep.delivered} of ${topRep.total} leads).`
-    );
+  const repMetricsForSummary = computeRepMetrics(data, range, branchId);
+  const eligibleReps = repMetricsForSummary.filter(r => r.totalLeads >= 5);
+  const topRepByConv = [...eligibleReps].sort((a, b) => b.conversionRate - a.conversionRate)[0];
+  const topRepByRev = [...eligibleReps].sort((a, b) => b.revenue - a.revenue)[0];
+
+  if (topRepByConv && topRepByRev) {
+    if (topRepByConv.rep.id === topRepByRev.rep.id) {
+       parts.push(`Top performer: ${topRepByConv.rep.name} ranks first in both conversion (${formatPercent(topRepByConv.conversionRate)}) and revenue (${formatCurrency(topRepByConv.revenue, true)}).`);
+    } else {
+       parts.push(`Top performers: ${topRepByConv.rep.name} leads with ${formatPercent(topRepByConv.conversionRate)} conversion, while ${topRepByRev.rep.name} leads in revenue (${formatCurrency(topRepByRev.revenue, true)}).`);
+    }
   }
 
   // Lost reasons
@@ -332,7 +335,12 @@ export function generateNetworkSummary(
   // Pipeline risk
   const pipelineLeads = getActivePipelineLeads(data);
   const totalPipelineValue = pipelineLeads.reduce((sum, l) => sum + l.deal_value, 0);
-  const coldCount = pipelineLeads.filter(l => l.daysSinceActivity >= 7).length;
+  // order_placed leads are just waiting for delivery, so they aren't "cold" in terms of sales contact
+  const preOrderStages = ['new', 'contacted', 'test_drive', 'negotiation'];
+  const coldCount = pipelineLeads.filter(
+    (l) => preOrderStages.includes(l.status) && l.daysSinceActivity >= 7
+  ).length;
+  
   if (pipelineLeads.length > 0) {
     let pipelineText = `Active pipeline: ${formatCurrency(totalPipelineValue, true)} across ${pipelineLeads.length} leads`;
     if (coldCount > 0) {
