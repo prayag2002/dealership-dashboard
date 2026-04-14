@@ -84,7 +84,7 @@ export default function OverviewPage() {
                 <Sparkles size={14} />
                 Network Performance Summary
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
                 {networkSummary.split(/\.\s+/).filter(s => s.trim()).map((sentence, i) => {
                   const text = sentence.endsWith('.') ? sentence : sentence + '.';
                   const isPositive = text.includes('leads with') || text.includes('strongest');
@@ -95,8 +95,8 @@ export default function OverviewPage() {
                       style={{
                         display: 'flex',
                         alignItems: 'flex-start',
-                        gap: 10,
-                        padding: '8px 12px',
+                        gap: 8,
+                        padding: '6px 10px',
                         borderRadius: 'var(--radius-sm)',
                         background: isNegative ? 'var(--color-rose-light)' : isPositive ? 'var(--color-emerald-light)' : 'var(--bg-secondary)',
                         fontSize: 13,

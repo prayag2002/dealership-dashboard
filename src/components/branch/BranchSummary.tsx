@@ -78,7 +78,7 @@ export default function BranchSummary({ summary, sections }: BranchSummaryProps)
         <Sparkles size={14} />
         Smart Branch Analysis
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
         {parsed.map((section, i) => {
           const Icon = iconMap[section.icon] || TrendingUp;
           return (
@@ -87,8 +87,8 @@ export default function BranchSummary({ summary, sections }: BranchSummaryProps)
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
-                gap: 10,
-                padding: '8px 12px',
+                gap: 8,
+                padding: '6px 10px',
                 borderRadius: 'var(--radius-sm)',
                 background: section.sentiment === 'negative' ? 'var(--color-rose-light)'
                   : section.sentiment === 'positive' ? 'var(--color-emerald-light)'

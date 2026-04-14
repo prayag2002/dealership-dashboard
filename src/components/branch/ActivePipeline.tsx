@@ -58,7 +58,11 @@ export default function ActivePipeline({ leads }: ActivePipelineProps) {
           </thead>
           <tbody>
             {leads.map((lead) => {
-              const aging = getAgingBadge(lead.daysSinceActivity);
+              // order_placed = deal closed, awaiting delivery — aging badges don't apply
+              const isAwaitingDelivery = lead.status === 'order_placed';
+              const aging = isAwaitingDelivery
+                ? { class: 'badge-blue', text: 'Awaiting Delivery' }
+                : getAgingBadge(lead.daysSinceActivity);
               return (
                 <tr key={lead.id} style={lead.isOverdue ? { background: 'var(--color-rose-light)' } : undefined}>
                   <td style={{ fontWeight: 500 }}>
