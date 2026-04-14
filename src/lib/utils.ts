@@ -45,26 +45,32 @@ export function daysBetween(dateA: string, dateB: string): number {
   return Math.round(Math.abs(b - a) / (1000 * 60 * 60 * 24));
 }
 
-export function daysSince(dateStr: string): number {
-  // Use end of data range as "now" since this is historical data
-  const reference = new Date('2025-12-31T23:59:59Z').getTime();
+export function daysSince(dateStr: string, referenceDate: Date): number {
   const date = new Date(dateStr).getTime();
-  return Math.round((reference - date) / (1000 * 60 * 60 * 24));
+  return Math.round((referenceDate.getTime() - date) / (1000 * 60 * 60 * 24));
 }
 
-// ─── Source Label Formatting ──────────────────────────────────────────────
+// ─── Generic Label Formatting ─────────────────────────────────────────────
 
-const sourceLabels: Record<string, string> = {
-  website: 'Website',
-  walk_in: 'Walk-in',
-  referral: 'Referral',
-  social_media: 'Social Media',
-  phone_enquiry: 'Phone Enquiry',
-  auto_expo: 'Auto Expo',
-};
+/** Converts snake_case to Title Case: "walk_in" → "Walk In" */
+export function formatSnakeCase(str: string): string {
+  return str
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
+/** Format a source string (uses known labels with fallback) */
 export function formatSource(source: string): string {
-  return sourceLabels[source] || source;
+  const known: Record<string, string> = {
+    website: 'Website',
+    walk_in: 'Walk-in',
+    referral: 'Referral',
+    social_media: 'Social Media',
+    phone_enquiry: 'Phone Enquiry',
+    auto_expo: 'Auto Expo',
+  };
+  return known[source] || formatSnakeCase(source);
 }
 
 // ─── Status Label Formatting ─────────────────────────────────────────────
@@ -80,7 +86,7 @@ const statusLabels: Record<string, string> = {
 };
 
 export function formatStatus(status: string): string {
-  return statusLabels[status] || status;
+  return statusLabels[status] || formatSnakeCase(status);
 }
 
 // ─── Color Helpers ────────────────────────────────────────────────────────
@@ -107,6 +113,9 @@ export const CHART_COLORS = [
   '#7c3aed', // violet
   '#0891b2', // cyan
   '#65a30d', // lime
+  '#dc2626', // red
+  '#0d9488', // teal
+  '#c026d3', // fuchsia
 ];
 
 export const STATUS_COLORS: Record<string, string> = {
@@ -119,13 +128,10 @@ export const STATUS_COLORS: Record<string, string> = {
   lost: '#ef4444',
 };
 
-export const BRANCH_COLORS: Record<string, string> = {
-  B1: '#2563eb',
-  B2: '#7c3aed',
-  B3: '#059669',
-  B4: '#d97706',
-  B5: '#e11d48',
-};
+/** Get a color for a branch by index (dynamic, not hardcoded to IDs) */
+export function getBranchColor(index: number): string {
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
 
 // ─── Misc ─────────────────────────────────────────────────────────────────
 

@@ -1,16 +1,18 @@
 import type {
   DealershipData,
   Alert,
-  BranchMetrics,
   DateRange,
 } from './types';
 import {
   computeBranchMetrics,
   computeSourceMetrics,
   computeLostReasons,
+  computeModelRevenue,
   getActivePipelineLeads,
+  filterLeadsByDateRange,
 } from './calculations';
 import { formatCurrency, formatPercent } from './utils';
+import { getReferenceDate } from '../store/filters';
 
 // ─── Smart Alert Generation ───────────────────────────────────────────────
 
@@ -20,6 +22,9 @@ export function generateAlerts(
 ): Alert[] {
   const alerts: Alert[] = [];
   const branchMetrics = computeBranchMetrics(data, range);
+
+  if (branchMetrics.length === 0) return alerts;
+
   const avgConversion =
     branchMetrics.reduce((sum, b) => sum + b.conversionRate, 0) / branchMetrics.length;
 
@@ -37,9 +42,9 @@ export function generateAlerts(
   });
 
   // 2. Cold leads — active leads with no activity for 7+ days
-  const coldLeads = getActivePipelineLeads(data).filter(
-    (l) => l.daysSinceActivity >= 7
-  );
+  const refDate = getReferenceDate(data);
+  const allPipelineLeads = getActivePipelineLeads(data);
+  const coldLeads = allPipelineLeads.filter((l) => l.daysSinceActivity >= 7);
   if (coldLeads.length > 0) {
     const coldByBranch = new Map<string, number>();
     coldLeads.forEach((l) => {
@@ -62,31 +67,35 @@ export function generateAlerts(
     });
   }
 
-  // 3. Source channel inefficiency
+  // 3. Source channel inefficiency (dynamic — not hardcoded to specific sources)
   const sourceMetrics = computeSourceMetrics(data, range);
-  const worstSource = sourceMetrics[sourceMetrics.length - 1];
-  const bestSource = sourceMetrics[0];
-  if (worstSource && bestSource && bestSource.conversionRate > worstSource.conversionRate * 2) {
-    alerts.push({
-      id: 'source-inefficiency',
-      severity: 'warning',
-      title: `${worstSource.label} leads convert poorly`,
-      description: `${formatPercent(worstSource.conversionRate)} conversion vs ${formatPercent(bestSource.conversionRate)} for ${bestSource.label}. Consider re-evaluating ${worstSource.label} ad spend.`,
-    });
+  if (sourceMetrics.length >= 2) {
+    const worstSource = sourceMetrics[sourceMetrics.length - 1];
+    const bestSource = sourceMetrics[0];
+    if (bestSource.conversionRate > worstSource.conversionRate * 2 && worstSource.total >= 5) {
+      alerts.push({
+        id: 'source-inefficiency',
+        severity: 'warning',
+        title: `${worstSource.label} leads convert poorly`,
+        description: `${formatPercent(worstSource.conversionRate)} conversion vs ${formatPercent(bestSource.conversionRate)} for ${bestSource.label}. Consider re-evaluating ${worstSource.label} ad spend.`,
+      });
+    }
   }
 
   // 4. Top performing branches (positive alerts)
-  const bestBranch = branchMetrics.reduce((best, bm) =>
-    bm.conversionRate > best.conversionRate ? bm : best
-  );
-  if (bestBranch.conversionRate > avgConversion * 1.2) {
-    alerts.push({
-      id: `best-branch-${bestBranch.branch.id}`,
-      severity: 'positive',
-      title: `${bestBranch.branch.name} leads the network`,
-      description: `${formatPercent(bestBranch.conversionRate)} conversion rate, ${formatCurrency(bestBranch.revenue, true)} revenue. Consider replicating their practices across other branches.`,
-      branch: bestBranch.branch.id,
-    });
+  if (branchMetrics.length > 0) {
+    const bestBranch = branchMetrics.reduce((best, bm) =>
+      bm.conversionRate > best.conversionRate ? bm : best
+    );
+    if (bestBranch.conversionRate > avgConversion * 1.2) {
+      alerts.push({
+        id: `best-branch-${bestBranch.branch.id}`,
+        severity: 'positive',
+        title: `${bestBranch.branch.name} leads the network`,
+        description: `${formatPercent(bestBranch.conversionRate)} conversion rate, ${formatCurrency(bestBranch.revenue, true)} revenue. Consider replicating their practices across other branches.`,
+        branch: bestBranch.branch.id,
+      });
+    }
   }
 
   // 5. Improving branch trend
@@ -102,15 +111,29 @@ export function generateAlerts(
       });
     });
 
-  // 6. High lost reasons — financing
+  // 6. Any lost reason that accounts for ≥15% of all lost deals (dynamic)
   const lostReasons = computeLostReasons(data, range);
-  const financingLost = lostReasons.find((r) => r.reason === 'Financing not approved');
-  if (financingLost && financingLost.count >= 10) {
+  const totalLost = lostReasons.reduce((sum, r) => sum + r.count, 0);
+  lostReasons.forEach((r) => {
+    if (r.count >= 10 && r.percentage >= 15 && r.reason !== 'Unknown') {
+      alerts.push({
+        id: `lost-reason-${r.reason.toLowerCase().replace(/\s+/g, '-')}`,
+        severity: 'warning',
+        title: `${r.count} deals lost: "${r.reason}"`,
+        description: `${formatCurrency(r.revenue, true)} in potential revenue lost. This accounts for ${formatPercent(r.percentage, 0)} of all lost deals.`,
+      });
+    }
+  });
+
+  // 7. Overdue pipeline leads (uses expected_close_date)
+  const overdueLeads = allPipelineLeads.filter((l) => l.isOverdue);
+  if (overdueLeads.length >= 3) {
+    const overdueValue = overdueLeads.reduce((sum, l) => sum + l.deal_value, 0);
     alerts.push({
-      id: 'financing-issue',
+      id: 'overdue-pipeline',
       severity: 'warning',
-      title: `${financingLost.count} deals lost to financing issues`,
-      description: `${formatCurrency(financingLost.revenue, true)} in potential revenue lost because financing wasn't approved. Consider partnering with additional financial institutions.`,
+      title: `${overdueLeads.length} leads past expected close date`,
+      description: `${formatCurrency(overdueValue, true)} in pipeline at risk of slipping. These deals were expected to close already — escalate follow-ups.`,
     });
   }
 
@@ -119,7 +142,7 @@ export function generateAlerts(
   return alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 }
 
-// ─── Natural Language Branch Summary ──────────────────────────────────────
+// ─── Natural Language Branch Summary (richer) ─────────────────────────────
 
 export function generateBranchSummary(
   data: DealershipData,
@@ -132,12 +155,15 @@ export function generateBranchSummary(
 
   const avgConversion =
     allBranchMetrics.reduce((sum, b) => sum + b.conversionRate, 0) / allBranchMetrics.length;
-  const avgDeliveryDays =
-    allBranchMetrics.reduce((sum, b) => sum + b.avgDeliveryDays, 0) / allBranchMetrics.filter(b => b.avgDeliveryDays > 0).length;
+  const branchesWithDelivery = allBranchMetrics.filter(b => b.avgDeliveryDays > 0);
+  const avgDeliveryDays = branchesWithDelivery.length > 0
+    ? branchesWithDelivery.reduce((sum, b) => sum + b.avgDeliveryDays, 0) / branchesWithDelivery.length
+    : 0;
 
   const lostReasons = computeLostReasons(data, range, branchId);
   const sourceMetrics = computeSourceMetrics(data, range, branchId);
   const bestSource = sourceMetrics[0];
+  const repMetrics = data.sales_reps.filter(r => r.branch_id === branchId && r.role === 'sales_officer');
 
   // Ranking
   const sortedByConversion = [...allBranchMetrics].sort(
@@ -146,7 +172,7 @@ export function generateBranchSummary(
   const rank = sortedByConversion.findIndex((b) => b.branch.id === branchId) + 1;
   const rankText = rank === 1 ? 'the top-performing branch' :
     rank === allBranchMetrics.length ? 'the lowest-performing branch' :
-    `ranked #${rank} of ${allBranchMetrics.length} branches`;
+      `ranked #${rank} of ${allBranchMetrics.length} branches`;
 
   const parts: string[] = [];
 
@@ -158,11 +184,45 @@ export function generateBranchSummary(
   // Comparison to average
   if (bm.conversionRate < avgConversion * 0.5) {
     parts.push(
-      `This is significantly below the network average of ${formatPercent(avgConversion)}. ${bm.lost} of ${bm.totalLeads} leads were lost — a critical area requiring immediate attention.`
+      `This is significantly below the network average of ${formatPercent(avgConversion)}. ${bm.lost} of ${bm.totalLeads} leads were lost, a critical area requiring immediate attention.`
     );
   } else if (bm.conversionRate > avgConversion * 1.2) {
     parts.push(
       `This outperforms the network average of ${formatPercent(avgConversion)}, indicating strong sales execution.`
+    );
+  } else {
+    parts.push(
+      `This is in line with the network average of ${formatPercent(avgConversion)}.`
+    );
+  }
+
+  // Target achievement
+  if (bm.targetUnits > 0) {
+    parts.push(
+      `Target achievement: ${bm.delivered} units delivered against a target of ${bm.targetUnits} (${formatPercent(bm.achievementRate)} achievement rate).`
+    );
+  }
+
+  // Top rep spotlight
+  const leads = filterLeadsByDateRange(
+    data.leads.filter(l => l.branch_id === branchId),
+    range
+  );
+  const repMap = new Map<string, { delivered: number; total: number; name: string }>();
+  leads.forEach(l => {
+    const rep = data.sales_reps.find(r => r.id === l.assigned_to);
+    if (!rep || rep.role === 'branch_manager') return;
+    const existing = repMap.get(rep.id) || { delivered: 0, total: 0, name: rep.name };
+    existing.total++;
+    if (l.status === 'delivered') existing.delivered++;
+    repMap.set(rep.id, existing);
+  });
+  const topRep = Array.from(repMap.values())
+    .filter(r => r.total >= 5)
+    .sort((a, b) => (b.delivered / b.total) - (a.delivered / a.total))[0];
+  if (topRep) {
+    parts.push(
+      `Top performer: ${topRep.name} with ${formatPercent((topRep.delivered / topRep.total) * 100)} conversion (${topRep.delivered} of ${topRep.total} leads).`
     );
   }
 
@@ -185,7 +245,7 @@ export function generateBranchSummary(
   }
 
   // Delivery performance
-  if (bm.avgDeliveryDays > 0) {
+  if (bm.avgDeliveryDays > 0 && avgDeliveryDays > 0) {
     if (bm.avgDeliveryDays > avgDeliveryDays * 1.3) {
       parts.push(
         `Delivery time (${bm.avgDeliveryDays.toFixed(0)} days avg) is above the network average of ${avgDeliveryDays.toFixed(0)} days — operational bottlenecks should be investigated.`
@@ -193,27 +253,39 @@ export function generateBranchSummary(
     }
   }
 
+  // Overdue pipeline leads
+  const pipelineLeads = getActivePipelineLeads(data, branchId);
+  const overdueCount = pipelineLeads.filter(l => l.isOverdue).length;
+  if (overdueCount > 0) {
+    const overdueValue = pipelineLeads.filter(l => l.isOverdue).reduce((sum, l) => sum + l.deal_value, 0);
+    parts.push(
+      `${overdueCount} pipeline lead${overdueCount > 1 ? 's are' : ' is'} past the expected close date (${formatCurrency(overdueValue, true)} at risk).`
+    );
+  }
+
   // Recommendation
   if (bm.conversionRate < avgConversion * 0.5) {
     parts.push(
-      `Recommend: immediate process audit, sales training, and lead qualification review.`
+      `Recommendation: immediate process audit, sales training, and lead qualification review.`
     );
   } else if (bm.pipelineCount > 5) {
     parts.push(
-      `Active pipeline: ${bm.pipelineCount} leads worth ${formatCurrency(bm.pipelineValue, true)} — prioritize follow-ups to maximize conversion.`
+      `Active pipeline: ${bm.pipelineCount} leads worth ${formatCurrency(bm.pipelineValue, true)}, prioritize follow-ups to maximize conversion.`
     );
   }
 
   return parts.join(' ');
 }
 
-// ─── Network Summary (for Overview page) ──────────────────────────────────
+// ─── Network Summary (richer) ─────────────────────────────────────────────
 
 export function generateNetworkSummary(
   data: DealershipData,
   range: DateRange
 ): string {
   const branchMetrics = computeBranchMetrics(data, range);
+  if (branchMetrics.length === 0) return 'No data available for this time range.';
+
   const totalRevenue = branchMetrics.reduce((sum, b) => sum + b.revenue, 0);
   const totalDelivered = branchMetrics.reduce((sum, b) => sum + b.delivered, 0);
   const totalLeads = branchMetrics.reduce((sum, b) => sum + b.totalLeads, 0);
@@ -226,5 +298,62 @@ export function generateNetworkSummary(
     a.conversionRate < b.conversionRate ? a : b
   );
 
-  return `Across ${branchMetrics.length} branches, the network generated ${formatCurrency(totalRevenue, true)} from ${totalDelivered} deliveries out of ${totalLeads} leads (${formatPercent(avgConversion)} conversion). ${best.branch.name} leads with ${formatPercent(best.conversionRate)} conversion, while ${worst.branch.name} significantly trails at ${formatPercent(worst.conversionRate)}. Walk-in remains the strongest channel. Focus areas: improving ${worst.branch.name}'s conversion and addressing financing-related lost deals.`;
+  const parts: string[] = [];
+
+  // Core metrics
+  parts.push(
+    `Across ${branchMetrics.length} branches, the network generated ${formatCurrency(totalRevenue, true)} from ${totalDelivered} deliveries out of ${totalLeads} leads (${formatPercent(avgConversion)} conversion).`
+  );
+
+  // Best vs worst
+  parts.push(
+    `${best.branch.name} leads with ${formatPercent(best.conversionRate)} conversion, while ${worst.branch.name} trails at ${formatPercent(worst.conversionRate)}.`
+  );
+
+  // Model mix — top revenue driver
+  const modelRevenue = computeModelRevenue(data, range);
+  if (modelRevenue.length > 0) {
+    const topModel = modelRevenue[0];
+    const topModelPct = totalRevenue > 0 ? (topModel.revenue / totalRevenue) * 100 : 0;
+    parts.push(
+      `${topModel.model} drives ${formatPercent(topModelPct, 0)} of total revenue (${formatCurrency(topModel.revenue, true)}, ${topModel.units} units).`
+    );
+  }
+
+  // Best source (dynamic)
+  const sourceMetrics = computeSourceMetrics(data, range);
+  if (sourceMetrics.length > 0) {
+    const bestSource = sourceMetrics[0];
+    parts.push(
+      `${bestSource.label} is the strongest lead source at ${formatPercent(bestSource.conversionRate)} conversion.`
+    );
+  }
+
+  // Pipeline risk
+  const pipelineLeads = getActivePipelineLeads(data);
+  const totalPipelineValue = pipelineLeads.reduce((sum, l) => sum + l.deal_value, 0);
+  const coldCount = pipelineLeads.filter(l => l.daysSinceActivity >= 7).length;
+  if (pipelineLeads.length > 0) {
+    let pipelineText = `Active pipeline: ${formatCurrency(totalPipelineValue, true)} across ${pipelineLeads.length} leads`;
+    if (coldCount > 0) {
+      pipelineText += ` — ${coldCount} haven't been contacted in 7+ days`;
+    }
+    parts.push(pipelineText + '.');
+  }
+
+  // Focus areas
+  const lostReasons = computeLostReasons(data, range);
+  const topLostReason = lostReasons[0];
+  const focusAreas: string[] = [];
+  if (worst.conversionRate < avgConversion * 0.5) {
+    focusAreas.push(`improving ${worst.branch.name}'s conversion`);
+  }
+  if (topLostReason && topLostReason.reason !== 'Unknown') {
+    focusAreas.push(`addressing "${topLostReason.reason}" lost deals (${topLostReason.count} occurrences)`);
+  }
+  if (focusAreas.length > 0) {
+    parts.push(`Focus areas: ${focusAreas.join(' and ')}.`);
+  }
+
+  return parts.join(' ');
 }

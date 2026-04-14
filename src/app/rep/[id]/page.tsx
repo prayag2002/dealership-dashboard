@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -14,9 +14,8 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import type { DealershipData } from '../../../lib/types';
-import { loadData } from '../../../lib/data-loader';
 import { useFilterStore } from '../../../store/filters';
+import { loadData } from '../../../lib/data-loader';
 import {
   computeRepMetrics,
   computeRepMonthlyData,
@@ -32,16 +31,19 @@ import {
   Timer,
 } from 'lucide-react';
 import SafeResponsiveContainer from '../../../components/charts/SafeResponsiveContainer';
+import DateRangePicker from '../../../components/layout/DateRangePicker';
+import EmptyState from '../../../components/layout/EmptyState';
 
 export default function RepPage() {
   const params = useParams();
   const repId = params.id as string;
-  const [data, setData] = useState<DealershipData | null>(null);
-  const { dateRange } = useFilterStore();
+  const { data, setData, dateRange } = useFilterStore();
 
   useEffect(() => {
-    loadData().then(setData);
-  }, []);
+    if (!data) {
+      loadData().then(setData);
+    }
+  }, [data, setData]);
 
   if (!data) {
     return (
@@ -77,6 +79,9 @@ export default function RepPage() {
     data.leads.filter((l) => l.assigned_to === repId),
     dateRange
   );
+
+  const hasData = repLeads.length > 0;
+
   const statusCounts = repLeads.reduce((acc, l) => {
     acc[l.status] = (acc[l.status] || 0) + 1;
     return acc;
@@ -135,154 +140,164 @@ export default function RepPage() {
             </p>
           </div>
         </div>
+        <DateRangePicker />
       </div>
 
-      {/* KPIs */}
-      <div className="section">
-        <div className="kpi-grid-4">
-          {kpis.map((kpi, i) => (
-            <div key={kpi.title} className="card animate-in" style={{ animationDelay: `${i * 50}ms` }}>
-              <div className="card-header">
-                <span className="card-title">{kpi.title}</span>
-                <div className={`kpi-icon ${kpi.color}`}>
-                  <kpi.icon size={18} />
-                </div>
-              </div>
-              <div className="card-value">{kpi.value}</div>
-              <div className="card-subtitle">{kpi.subtitle}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Monthly Performance + Status Distribution */}
-      <div className="section two-col">
-        <div className="card animate-in">
-          <div className="card-header">
-            <span className="card-title">Monthly Performance</span>
-          </div>
-          <div className="chart-container-sm">
-            <SafeResponsiveContainer>
-              <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
-                <XAxis
-                  dataKey="label"
-                  stroke="var(--border-primary)"
-                  tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="var(--border-primary)"
-                  tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
-                  tickLine={false}
-                  width={30}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="deliveredLeads" name="Delivered" fill="#059669" radius={[4, 4, 0, 0]} barSize={24} />
-                <Bar dataKey="newLeads" name="New Leads" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={24} opacity={0.3} />
-              </BarChart>
-            </SafeResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="card animate-in">
-          <div className="card-header">
-            <span className="card-title">Lead Status Distribution</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 160, height: 160 }}>
-              <SafeResponsiveContainer>
-                <PieChart>
-                  <Pie
-                    data={statusData}
-                    dataKey="value"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={40}
-                    outerRadius={70}
-                    paddingAngle={2}
-                  >
-                    {statusData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: 'var(--radius-md)',
-                      fontSize: 12,
-                    }}
-                  />
-                </PieChart>
-              </SafeResponsiveContainer>
-            </div>
-            <div style={{ flex: 1, fontSize: 12 }}>
-              {statusData.map((s) => (
-                <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{s.name}</span>
-                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.value}</span>
+      {!hasData ? (
+        <EmptyState
+          title="No data for this rep"
+          description="No leads found for this rep in the selected time range. Try adjusting the date filter."
+        />
+      ) : (
+        <>
+          {/* KPIs */}
+          <div className="section">
+            <div className="kpi-grid-4">
+              {kpis.map((kpi, i) => (
+                <div key={kpi.title} className="card animate-in" style={{ animationDelay: `${i * 50}ms` }}>
+                  <div className="card-header">
+                    <span className="card-title">{kpi.title}</span>
+                    <div className={`kpi-icon ${kpi.color}`}>
+                      <kpi.icon size={18} />
+                    </div>
+                  </div>
+                  <div className="card-value">{kpi.value}</div>
+                  <div className="card-subtitle">{kpi.subtitle}</div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Lead Table */}
-      <div className="section">
-        <div className="card animate-in">
-          <div className="card-header">
-            <span className="card-title">All Leads</span>
-            <span className="badge badge-blue">{repLeads.length} total</span>
+          {/* Monthly Performance + Status Distribution */}
+          <div className="section two-col">
+            <div className="card animate-in">
+              <div className="card-header">
+                <span className="card-title">Monthly Performance</span>
+              </div>
+              <div className="chart-container-sm">
+                <SafeResponsiveContainer>
+                  <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
+                    <XAxis
+                      dataKey="label"
+                      stroke="var(--border-primary)"
+                      tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      stroke="var(--border-primary)"
+                      tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
+                      tickLine={false}
+                      width={30}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-primary)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: 12,
+                      }}
+                    />
+                    <Bar dataKey="deliveredLeads" name="Delivered" fill="#059669" radius={[4, 4, 0, 0]} barSize={24} />
+                    <Bar dataKey="newLeads" name="New Leads" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={24} opacity={0.3} />
+                  </BarChart>
+                </SafeResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="card animate-in">
+              <div className="card-header">
+                <span className="card-title">Lead Status Distribution</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ width: 160, height: 160 }}>
+                  <SafeResponsiveContainer>
+                    <PieChart>
+                      <Pie
+                        data={statusData}
+                        dataKey="value"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={70}
+                        paddingAngle={2}
+                      >
+                        {statusData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border-primary)',
+                          borderRadius: 'var(--radius-md)',
+                          fontSize: 12,
+                        }}
+                      />
+                    </PieChart>
+                  </SafeResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, fontSize: 12 }}>
+                  {statusData.map((s) => (
+                    <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+                      <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{s.name}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <div style={{ overflowX: 'auto', maxHeight: 400, overflowY: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Model</th>
-                  <th>Source</th>
-                  <th>Status</th>
-                  <th>Value</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {repLeads.map((lead) => {
-                  const statusColor =
-                    lead.status === 'delivered' ? 'badge-emerald' :
-                      lead.status === 'lost' ? 'badge-rose' :
-                        lead.status === 'order_placed' ? 'badge-emerald' :
-                          'badge-blue';
-                  return (
-                    <tr key={lead.id}>
-                      <td style={{ fontWeight: 500 }}>{lead.customer_name}</td>
-                      <td>{lead.model_interested}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{lead.source.replace('_', ' ')}</td>
-                      <td>
-                        <span className={`badge ${statusColor}`}>{formatStatus(lead.status)}</span>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{formatCurrency(lead.deal_value, true)}</td>
-                      <td style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                        {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </td>
+
+          {/* Lead Table */}
+          <div className="section">
+            <div className="card animate-in">
+              <div className="card-header">
+                <span className="card-title">All Leads</span>
+                <span className="badge badge-blue">{repLeads.length} total</span>
+              </div>
+              <div style={{ overflowX: 'auto', maxHeight: 400, overflowY: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Model</th>
+                      <th>Source</th>
+                      <th>Status</th>
+                      <th>Value</th>
+                      <th>Created</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {repLeads.map((lead) => {
+                      const statusColor =
+                        lead.status === 'delivered' ? 'badge-emerald' :
+                          lead.status === 'lost' ? 'badge-rose' :
+                            lead.status === 'order_placed' ? 'badge-emerald' :
+                              'badge-blue';
+                      return (
+                        <tr key={lead.id}>
+                          <td style={{ fontWeight: 500 }}>{lead.customer_name}</td>
+                          <td>{lead.model_interested}</td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{lead.source.replace(/_/g, ' ')}</td>
+                          <td>
+                            <span className={`badge ${statusColor}`}>{formatStatus(lead.status)}</span>
+                          </td>
+                          <td style={{ fontWeight: 600 }}>{formatCurrency(lead.deal_value, true)}</td>
+                          <td style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                            {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

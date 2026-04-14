@@ -10,18 +10,14 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useFilterStore } from '../../store/filters';
-
-const branches = [
-  { id: 'B1', name: 'Downtown Toyota', city: 'Chennai' },
-  { id: 'B2', name: 'Highway Toyota', city: 'Chennai' },
-  { id: 'B3', name: 'Lakeside Toyota', city: 'Bangalore' },
-  { id: 'B4', name: 'Central Toyota', city: 'Hyderabad' },
-  { id: 'B5', name: 'Eastside Toyota', city: 'Mumbai' },
-];
+import DataUploader from './DataUploader';
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { theme, toggleTheme, sidebarOpen, setSidebarOpen } = useFilterStore();
+  const { data, theme, toggleTheme, sidebarOpen, setSidebarOpen } = useFilterStore();
+
+  // Derive branches from loaded data — no hardcoding
+  const branches = data?.branches || [];
 
   return (
     <>
@@ -45,9 +41,11 @@ export default function Sidebar() {
             <span>Overview</span>
           </Link>
 
-          <div style={{ padding: '12px 12px 6px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
-            Branches
-          </div>
+          {branches.length > 0 && (
+            <div style={{ padding: '12px 12px 6px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
+              Branches
+            </div>
+          )}
 
           {branches.map((branch) => (
             <Link
@@ -63,15 +61,18 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <button
-            onClick={toggleTheme}
-            className="sidebar-link"
-            style={{ width: '100%', border: 'none', cursor: 'pointer', background: 'transparent' }}
-          >
-            {theme === 'light' ? <Moon /> : <Sun />}
-            <span>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
-          </button>
+        <div style={{ marginTop: 'auto' }}>
+          <DataUploader />
+          <div className="sidebar-footer">
+            <button
+              onClick={toggleTheme}
+              className="sidebar-link"
+              style={{ width: '100%', border: 'none', cursor: 'pointer', background: 'transparent' }}
+            >
+              {theme === 'light' ? <Moon /> : <Sun />}
+              <span>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
+            </button>
+          </div>
         </div>
       </aside>
     </>

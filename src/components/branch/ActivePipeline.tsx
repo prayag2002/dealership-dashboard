@@ -2,9 +2,10 @@
 
 import type { Lead } from '../../lib/types';
 import { formatCurrency, formatStatus } from '../../lib/utils';
+import { AlertTriangle } from 'lucide-react';
 
 interface ActivePipelineProps {
-  leads: (Lead & { daysSinceActivity: number; repName: string })[];
+  leads: (Lead & { daysSinceActivity: number; repName: string; isOverdue: boolean })[];
 }
 
 function getAgingBadge(days: number) {
@@ -27,11 +28,21 @@ export default function ActivePipeline({ leads }: ActivePipelineProps) {
     );
   }
 
+  const overdueCount = leads.filter((l) => l.isOverdue).length;
+
   return (
     <div className="card animate-in">
       <div className="card-header">
         <span className="card-title">Active Pipeline</span>
-        <span className="badge badge-blue">{leads.length} leads</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {overdueCount > 0 && (
+            <span className="badge badge-rose" style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <AlertTriangle size={10} />
+              {overdueCount} overdue
+            </span>
+          )}
+          <span className="badge badge-blue">{leads.length} leads</span>
+        </div>
       </div>
       <div style={{ overflowX: 'auto', maxHeight: 320, overflowY: 'auto' }}>
         <table className="data-table">
@@ -49,8 +60,15 @@ export default function ActivePipeline({ leads }: ActivePipelineProps) {
             {leads.map((lead) => {
               const aging = getAgingBadge(lead.daysSinceActivity);
               return (
-                <tr key={lead.id}>
-                  <td style={{ fontWeight: 500 }}>{lead.customer_name}</td>
+                <tr key={lead.id} style={lead.isOverdue ? { background: 'var(--color-rose-light)' } : undefined}>
+                  <td style={{ fontWeight: 500 }}>
+                    {lead.customer_name}
+                    {lead.isOverdue && (
+                      <span className="badge badge-rose" style={{ marginLeft: 6, fontSize: 9 }}>
+                        OVERDUE
+                      </span>
+                    )}
+                  </td>
                   <td>{lead.model_interested}</td>
                   <td>
                     <span className="badge badge-blue">{formatStatus(lead.status)}</span>

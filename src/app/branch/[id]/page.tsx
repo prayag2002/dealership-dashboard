@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import type { DealershipData } from '../../../lib/types';
-import { loadData } from '../../../lib/data-loader';
 import { useFilterStore } from '../../../store/filters';
+import { loadData } from '../../../lib/data-loader';
 import {
   computeBranchMetrics,
   computeRepMetrics,
@@ -15,6 +14,7 @@ import {
   computeLostReasons,
   computeDelayMetrics,
   getActivePipelineLeads,
+  filterLeadsByDateRange,
 } from '../../../lib/calculations';
 import { generateBranchSummary, generateAlerts } from '../../../lib/insights-engine';
 import { formatCurrency, formatPercent } from '../../../lib/utils';
@@ -28,6 +28,7 @@ import ActivePipeline from '../../../components/branch/ActivePipeline';
 import ConversionFunnel from '../../../components/dashboard/ConversionFunnel';
 import SourcePerformance from '../../../components/dashboard/SourcePerformance';
 import AlertsPanel from '../../../components/dashboard/AlertsPanel';
+import EmptyState from '../../../components/layout/EmptyState';
 import {
   ArrowLeft,
   IndianRupee,
@@ -40,12 +41,13 @@ import {
 export default function BranchPage() {
   const params = useParams();
   const branchId = params.id as string;
-  const [data, setData] = useState<DealershipData | null>(null);
-  const { dateRange } = useFilterStore();
+  const { data, setData, dateRange } = useFilterStore();
 
   useEffect(() => {
-    loadData().then(setData);
-  }, []);
+    if (!data) {
+      loadData().then(setData);
+    }
+  }, [data, setData]);
 
   if (!data) {
     return (
@@ -65,11 +67,21 @@ export default function BranchPage() {
   const bm = allBranchMetrics.find((b) => b.branch.id === branchId);
   if (!bm) return <div className="page-container"><p>Branch not found</p></div>;
 
+  const branch = data.branches.find((b) => b.id === branchId);
+
+  // Check if the date range has data for this branch
+  const branchLeads = filterLeadsByDateRange(
+    data.leads.filter((l) => l.branch_id === branchId),
+    dateRange
+  );
+  const hasData = branchLeads.length > 0;
+
   const networkAvgConversion =
     allBranchMetrics.reduce((sum, b) => sum + b.conversionRate, 0) / allBranchMetrics.length;
-  const networkAvgDeliveryDays =
-    allBranchMetrics.filter(b => b.avgDeliveryDays > 0).reduce((sum, b) => sum + b.avgDeliveryDays, 0) /
-    allBranchMetrics.filter(b => b.avgDeliveryDays > 0).length;
+  const branchesWithDelivery = allBranchMetrics.filter(b => b.avgDeliveryDays > 0);
+  const networkAvgDeliveryDays = branchesWithDelivery.length > 0
+    ? branchesWithDelivery.reduce((sum, b) => sum + b.avgDeliveryDays, 0) / branchesWithDelivery.length
+    : 0;
 
   const repMetrics = computeRepMetrics(data, dateRange, branchId);
   const monthlyData = computeMonthlyData(data, dateRange, branchId);
@@ -88,7 +100,7 @@ export default function BranchPage() {
     {
       title: 'Revenue',
       value: formatCurrency(bm.revenue, true),
-      subtitle: `Target: ${formatCurrency(bm.targetRevenue, true)}`,
+      subtitle: bm.targetRevenue > 0 ? `Target: ${formatCurrency(bm.targetRevenue, true)}` : 'No target set',
       icon: IndianRupee,
       color: 'blue',
     },
@@ -109,9 +121,11 @@ export default function BranchPage() {
     {
       title: 'Avg Delivery Time',
       value: bm.avgDeliveryDays > 0 ? `${bm.avgDeliveryDays.toFixed(0)} days` : 'N/A',
-      subtitle: bm.avgDeliveryDays > networkAvgDeliveryDays * 1.2 ? 'Above network avg' : 'On track',
+      subtitle: bm.avgDeliveryDays > 0 && networkAvgDeliveryDays > 0
+        ? (bm.avgDeliveryDays > networkAvgDeliveryDays * 1.2 ? 'Above network avg' : 'On track')
+        : '',
       icon: Clock,
-      color: bm.avgDeliveryDays > networkAvgDeliveryDays * 1.2 ? 'rose' : 'emerald',
+      color: bm.avgDeliveryDays > 0 && networkAvgDeliveryDays > 0 && bm.avgDeliveryDays > networkAvgDeliveryDays * 1.2 ? 'rose' : 'emerald',
     },
   ];
 
@@ -127,101 +141,110 @@ export default function BranchPage() {
           <div>
             <h1 className="page-title">{bm.branch.name}</h1>
             <p className="page-description">
-              {bm.branch.city} {bm.manager ? `· Manager: ${bm.manager.name}` : ''}
+              {bm.branch.city || ''} {bm.manager ? `· Manager: ${bm.manager.name}` : ''}
             </p>
           </div>
         </div>
         <DateRangePicker />
       </div>
 
-      {/* NL Summary — the differentiator */}
-      <div className="section">
-        <BranchSummary summary={branchSummary} />
-      </div>
+      {!hasData ? (
+        <EmptyState
+          title="No data for this branch"
+          description="No leads found for this branch in the selected time range. Try adjusting the date filter."
+        />
+      ) : (
+        <>
+          {/* NL Summary */}
+          <div className="section">
+            <BranchSummary summary={branchSummary} />
+          </div>
 
-      {/* Branch KPIs */}
-      <div className="section">
-        <div className="kpi-grid-4">
-          {kpis.map((kpi, i) => (
-            <div key={kpi.title} className="card animate-in" style={{ animationDelay: `${i * 50}ms` }}>
-              <div className="card-header">
-                <span className="card-title">{kpi.title}</span>
-                <div className={`kpi-icon ${kpi.color}`}>
-                  <kpi.icon size={18} />
-                </div>
-              </div>
-              <div className="card-value">{kpi.value}</div>
-              <div className="card-subtitle">{kpi.subtitle}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Target Progress + Funnel */}
-      <div className="section two-col">
-        <TargetProgress data={monthlyData} />
-        <ConversionFunnel stages={funnelData} />
-      </div>
-
-      {/* Rep Leaderboard */}
-      <div className="section">
-        <RepLeaderboard reps={repMetrics} branchAvgConversion={bm.conversionRate} />
-      </div>
-
-      {/* Lost Analysis + Source Performance */}
-      <div className="section two-col">
-        <LostAnalysis reasons={lostReasons} totalLostRevenue={totalLostRevenue} />
-        <SourcePerformance data={sourceMetrics} />
-      </div>
-
-      {/* Alerts for this branch */}
-      {alerts.length > 0 && (
-        <div className="section">
-          <AlertsPanel alerts={alerts} />
-        </div>
-      )}
-
-      {/* Delivery Delay Analysis */}
-      {delayMetrics.length > 0 && (
-        <div className="section">
-          <div className="card animate-in">
-            <div className="card-header">
-              <span className="card-title">Delivery Delays</span>
-              <span className="card-subtitle">
-                {data.deliveries.filter(d => {
-                  const branchLeadIds = new Set(data.leads.filter(l => l.branch_id === branchId).map(l => l.id));
-                  return branchLeadIds.has(d.lead_id) && d.delay_reason;
-                }).length} delayed deliveries
-              </span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {delayMetrics.map((d) => (
-                <div
-                  key={d.reason}
-                  style={{
-                    padding: '8px 14px',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <Truck size={14} style={{ color: 'var(--color-amber)' }} />
-                  <span style={{ color: 'var(--text-secondary)' }}>{d.reason}</span>
-                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{d.count}</span>
+          {/* Branch KPIs */}
+          <div className="section">
+            <div className="kpi-grid-4">
+              {kpis.map((kpi, i) => (
+                <div key={kpi.title} className="card animate-in" style={{ animationDelay: `${i * 50}ms` }}>
+                  <div className="card-header">
+                    <span className="card-title">{kpi.title}</span>
+                    <div className={`kpi-icon ${kpi.color}`}>
+                      <kpi.icon size={18} />
+                    </div>
+                  </div>
+                  <div className="card-value">{kpi.value}</div>
+                  <div className="card-subtitle">{kpi.subtitle}</div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Active Pipeline */}
-      <div className="section">
-        <ActivePipeline leads={pipelineLeads} />
-      </div>
+          {/* Target Progress + Funnel */}
+          <div className="section two-col">
+            <TargetProgress data={monthlyData} />
+            <ConversionFunnel stages={funnelData} />
+          </div>
+
+          {/* Rep Leaderboard */}
+          <div className="section">
+            <RepLeaderboard reps={repMetrics} branchAvgConversion={bm.conversionRate} />
+          </div>
+
+          {/* Lost Analysis + Source Performance */}
+          <div className="section two-col">
+            <LostAnalysis reasons={lostReasons} totalLostRevenue={totalLostRevenue} />
+            <SourcePerformance data={sourceMetrics} />
+          </div>
+
+          {/* Alerts for this branch */}
+          {alerts.length > 0 && (
+            <div className="section">
+              <AlertsPanel alerts={alerts} />
+            </div>
+          )}
+
+          {/* Delivery Delay Analysis */}
+          {delayMetrics.length > 0 && (
+            <div className="section">
+              <div className="card animate-in">
+                <div className="card-header">
+                  <span className="card-title">Delivery Delays</span>
+                  <span className="card-subtitle">
+                    {data.deliveries.filter(d => {
+                      const branchLeadIds = new Set(data.leads.filter(l => l.branch_id === branchId).map(l => l.id));
+                      return branchLeadIds.has(d.lead_id) && d.delay_reason;
+                    }).length} delayed deliveries
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {delayMetrics.map((d) => (
+                    <div
+                      key={d.reason}
+                      style={{
+                        padding: '8px 14px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <Truck size={14} style={{ color: 'var(--color-amber)' }} />
+                      <span style={{ color: 'var(--text-secondary)' }}>{d.reason}</span>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{d.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Active Pipeline */}
+          <div className="section">
+            <ActivePipeline leads={pipelineLeads} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

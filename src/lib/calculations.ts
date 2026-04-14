@@ -10,10 +10,10 @@ import type {
   LostReasonMetrics,
   DelayMetrics,
   DateRange,
-  LeadSource,
   LeadStatus,
 } from './types';
-import { getMonthFromDate } from './utils';
+import { getMonthFromDate, formatMonthShort, formatSource } from './utils';
+import { getReferenceDate } from '../store/filters';
 
 // ─── Filtering ────────────────────────────────────────────────────────────
 
@@ -215,19 +215,9 @@ export function computeMonthlyData(
         return delEntry && getMonthFromDate(delEntry.timestamp) === month;
       });
 
-    const monthLabels: Record<string, string> = {
-      '2025-06': 'Jun',
-      '2025-07': 'Jul',
-      '2025-08': 'Aug',
-      '2025-09': 'Sep',
-      '2025-10': 'Oct',
-      '2025-11': 'Nov',
-      '2025-12': 'Dec',
-    };
-
     return {
       month,
-      label: monthLabels[month] || month,
+      label: formatMonthShort(month), // Dynamic — works with any date
       actualRevenue: deliveredLeads.reduce((sum, l) => sum + l.deal_value, 0),
       targetRevenue: targets.reduce((sum, t) => sum + t.target_revenue, 0),
       actualUnits: deliveredLeads.length,
@@ -296,25 +286,10 @@ export function computeSourceMetrics(
     range
   );
 
-  const sources: LeadSource[] = [
-    'walk_in',
-    'website',
-    'referral',
-    'auto_expo',
-    'phone_enquiry',
-    'social_media',
-  ];
+  // Extract unique sources dynamically from the data
+  const uniqueSources = Array.from(new Set(leads.map((l) => l.source)));
 
-  const sourceLabels: Record<LeadSource, string> = {
-    walk_in: 'Walk-in',
-    website: 'Website',
-    referral: 'Referral',
-    auto_expo: 'Auto Expo',
-    phone_enquiry: 'Phone Enquiry',
-    social_media: 'Social Media',
-  };
-
-  return sources
+  return uniqueSources
     .map((source) => {
       const sourceLeads = leads.filter((l) => l.source === source);
       const delivered = sourceLeads.filter((l) => l.status === 'delivered');
@@ -322,7 +297,7 @@ export function computeSourceMetrics(
 
       return {
         source,
-        label: sourceLabels[source],
+        label: formatSource(source),
         total: sourceLeads.length,
         delivered: delivered.length,
         lost: lost.length,
@@ -348,11 +323,11 @@ export function computeLostReasons(
     branchId ? data.leads.filter((l) => l.branch_id === branchId) : data.leads,
     range
   );
-  const lostLeads = leads.filter((l) => l.status === 'lost' && l.lost_reason);
+  const lostLeads = leads.filter((l) => l.status === 'lost');
 
   const reasonMap = new Map<string, { count: number; revenue: number }>();
   lostLeads.forEach((l) => {
-    const key = l.lost_reason!;
+    const key = l.lost_reason || 'Unknown'; // null → "Unknown"
     const existing = reasonMap.get(key) || { count: 0, revenue: 0 };
     existing.count++;
     existing.revenue += l.deal_value;
@@ -405,8 +380,8 @@ export function computeDelayMetrics(
 export function getActivePipelineLeads(
   data: DealershipData,
   branchId?: string
-): (Lead & { daysSinceActivity: number; repName: string })[] {
-  const referenceDate = new Date('2025-12-31T23:59:59Z').getTime();
+): (Lead & { daysSinceActivity: number; repName: string; isOverdue: boolean })[] {
+  const refDate = getReferenceDate(data);
 
   return data.leads
     .filter((l) => (branchId ? l.branch_id === branchId : true))
@@ -415,15 +390,24 @@ export function getActivePipelineLeads(
     )
     .map((l) => {
       const rep = data.sales_reps.find((r) => r.id === l.assigned_to);
+      const isOverdue = l.expected_close_date
+        ? new Date(l.expected_close_date) < refDate
+        : false;
       return {
         ...l,
         daysSinceActivity: Math.round(
-          (referenceDate - new Date(l.last_activity_at).getTime()) / (1000 * 60 * 60 * 24)
+          (refDate.getTime() - new Date(l.last_activity_at).getTime()) / (1000 * 60 * 60 * 24)
         ),
         repName: rep?.name || 'Unknown',
+        isOverdue,
       };
     })
-    .sort((a, b) => b.daysSinceActivity - a.daysSinceActivity);
+    .sort((a, b) => {
+      // Overdue leads first, then by days since activity
+      if (a.isOverdue && !b.isOverdue) return -1;
+      if (!a.isOverdue && b.isOverdue) return 1;
+      return b.daysSinceActivity - a.daysSinceActivity;
+    });
 }
 
 // ─── Model Revenue ────────────────────────────────────────────────────────
@@ -482,14 +466,9 @@ export function computeRepMonthlyData(
         return delEntry && getMonthFromDate(delEntry.timestamp) === month;
       });
 
-    const monthLabels: Record<string, string> = {
-      '2025-06': 'Jun', '2025-07': 'Jul', '2025-08': 'Aug',
-      '2025-09': 'Sep', '2025-10': 'Oct', '2025-11': 'Nov', '2025-12': 'Dec',
-    };
-
     return {
       month,
-      label: monthLabels[month] || month,
+      label: formatMonthShort(month), // Dynamic
       actualRevenue: deliveredLeads.reduce((sum, l) => sum + l.deal_value, 0),
       targetRevenue: 0,
       actualUnits: deliveredLeads.length,
@@ -499,4 +478,51 @@ export function computeRepMonthlyData(
       lostLeads: monthLeads.filter((l) => l.status === 'lost').length,
     };
   });
+}
+
+// ─── What-If Scenario Computation ─────────────────────────────────────────
+
+export function computeWhatIf(
+  data: DealershipData,
+  range: DateRange,
+  stageFrom: LeadStatus,
+  stageTo: LeadStatus,
+  improvementPercent: number
+): { additionalDeliveries: number; additionalRevenue: number; currentConversion: number; projectedConversion: number } {
+  const leads = filterLeadsByDateRange(data.leads, range);
+
+  // Count leads that reached stageFrom
+  const reachedFrom = leads.filter((l) =>
+    l.status_history.some((h) => h.status === stageFrom)
+  ).length;
+
+  // Count leads that reached stageTo
+  const reachedTo = leads.filter((l) =>
+    l.status_history.some((h) => h.status === stageTo)
+  ).length;
+
+  const currentConversion = reachedFrom > 0 ? (reachedTo / reachedFrom) * 100 : 0;
+  const projectedConversion = Math.min(currentConversion + improvementPercent, 100);
+
+  // How many additional leads would pass through?
+  const additionalLeads = Math.round(
+    reachedFrom * (improvementPercent / 100)
+  );
+
+  // Average deal value of delivered leads
+  const deliveredLeads = leads.filter((l) => l.status === 'delivered');
+  const avgDealValue = deliveredLeads.length > 0
+    ? deliveredLeads.reduce((sum, l) => sum + l.deal_value, 0) / deliveredLeads.length
+    : 0;
+
+  // Not all additional leads will convert to delivery — apply downstream conversion
+  const delivered = leads.filter((l) =>
+    l.status_history.some((h) => h.status === 'delivered')
+  ).length;
+  const downstreamConversion = reachedTo > 0 ? delivered / reachedTo : 0;
+
+  const additionalDeliveries = Math.round(additionalLeads * downstreamConversion);
+  const additionalRevenue = additionalDeliveries * avgDealValue;
+
+  return { additionalDeliveries, additionalRevenue, currentConversion, projectedConversion };
 }

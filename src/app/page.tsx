@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import type { DealershipData } from '../lib/types';
-import { loadData } from '../lib/data-loader';
+import { useEffect } from 'react';
 import { useFilterStore } from '../store/filters';
+import { loadData } from '../lib/data-loader';
 import {
   computeKpis,
   computeBranchMetrics,
@@ -11,6 +10,7 @@ import {
   computeFunnel,
   computeSourceMetrics,
   computeModelRevenue,
+  filterLeadsByDateRange,
 } from '../lib/calculations';
 import { generateAlerts, generateNetworkSummary } from '../lib/insights-engine';
 
@@ -22,15 +22,18 @@ import ConversionFunnel from '../components/dashboard/ConversionFunnel';
 import AlertsPanel from '../components/dashboard/AlertsPanel';
 import ModelRevenue from '../components/dashboard/ModelRevenue';
 import SourcePerformance from '../components/dashboard/SourcePerformance';
+import WhatIfSimulator from '../components/dashboard/WhatIfSimulator';
+import EmptyState from '../components/layout/EmptyState';
 import { Sparkles } from 'lucide-react';
 
 export default function OverviewPage() {
-  const [data, setData] = useState<DealershipData | null>(null);
-  const { dateRange } = useFilterStore();
+  const { data, setData, dateRange } = useFilterStore();
 
   useEffect(() => {
-    loadData().then(setData);
-  }, []);
+    if (!data) {
+      loadData().then(setData);
+    }
+  }, [data, setData]);
 
   if (!data) {
     return (
@@ -45,6 +48,10 @@ export default function OverviewPage() {
       </div>
     );
   }
+
+  // Check if filter yields any data
+  const filteredLeads = filterLeadsByDateRange(data.leads, dateRange);
+  const hasData = filteredLeads.length > 0;
 
   const kpis = computeKpis(data, dateRange);
   const branchMetrics = computeBranchMetrics(data, dateRange);
@@ -61,54 +68,61 @@ export default function OverviewPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Executive Overview</h1>
-          <p className="page-description">Network performance at a glance · Jun–Dec 2025</p>
+          <p className="page-description">Network performance at a glance</p>
         </div>
         <DateRangePicker />
       </div>
 
-      {/* Network Summary */}
-      <div className="section">
-        <div className="summary-callout animate-in">
-          <div className="summary-label">
-            <Sparkles size={14} />
-            Performance Summary
+      {!hasData ? (
+        <EmptyState />
+      ) : (
+        <>
+          {/* Network Summary */}
+          <div className="section">
+            <div className="summary-callout animate-in">
+              <div className="summary-label">
+                <Sparkles size={14} />
+                Performance Summary
+              </div>
+              <p>{networkSummary}</p>
+            </div>
           </div>
-          <p>{networkSummary}</p>
-        </div>
-      </div>
 
-      {/* KPI Cards */}
-      <div className="section">
-        <KpiCards data={kpis} />
-      </div>
-
-      {/* Branch Scoreboard */}
-      <div className="section">
-        <div className="section-header">
-          <div>
-            <h2 className="section-title">Branch Performance</h2>
-            <p className="section-subtitle">Click a branch to see detailed analysis</p>
+          {/* KPI Cards */}
+          <div className="section">
+            <KpiCards data={kpis} />
           </div>
-        </div>
-        <BranchScoreboard metrics={branchMetrics} />
-      </div>
 
-      {/* Revenue Trend + Conversion Funnel */}
-      <div className="section two-col">
-        <RevenueTrend data={monthlyData} />
-        <ConversionFunnel stages={funnelData} />
-      </div>
+          {/* Branch Scoreboard */}
+          <div className="section">
+            <div className="section-header">
+              <div>
+                <h2 className="section-title">Branch Performance</h2>
+                <p className="section-subtitle">Click a branch to see detailed analysis</p>
+              </div>
+            </div>
+            <BranchScoreboard metrics={branchMetrics} />
+          </div>
 
-      {/* Alerts + Model Revenue */}
-      <div className="section two-col">
-        <AlertsPanel alerts={alerts} />
-        <ModelRevenue data={modelRevenue} />
-      </div>
+          {/* Revenue Trend + Conversion Funnel */}
+          <div className="section two-col">
+            <RevenueTrend data={monthlyData} />
+            <ConversionFunnel stages={funnelData} />
+          </div>
 
-      {/* Source Performance */}
-      <div className="section">
-        <SourcePerformance data={sourceMetrics} />
-      </div>
+          {/* What-If Simulator */}
+          <div className="section two-col">
+            <WhatIfSimulator data={data} dateRange={dateRange} />
+            <ModelRevenue data={modelRevenue} />
+          </div>
+
+          {/* Alerts + Source Performance */}
+          <div className="section two-col">
+            <AlertsPanel alerts={alerts} />
+            <SourcePerformance data={sourceMetrics} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
