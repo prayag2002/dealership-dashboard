@@ -114,6 +114,16 @@ If this were evolving into a production product:
 
 ---
 
+## Interesting Data Patterns Observed
+
+By running the provided dataset through the dashboard's deterministic analytics engine, several clear operational patterns emerge
+
+1. **The "Social Media" Drop-off:** Across almost all branches, leads originating from 'Social Media' have significantly worse final conversion rates than 'Walk-in' leads. For example, the alert engine repeatedly fires a warning that Social Media converts at roughly ~14%, compared to Walk-in which closes at ~45%.
+2. **The "Price Too High" Bottleneck:** The primary reason deals are lost across the entire network is consistently `"Price too high"`. It accounts for the vast majority of lost deals. This insight is computed by the lost reasons module, suggesting the need for either better early-stage lead qualification or modified pricing strategies.
+3. **The Critical "Negotiation" Stage:** Looking at the unified Conversion Funnel, the largest immediate drop-off almost always occurs right after the `Test Drive` phase, specifically attempting to convert a test drive into an `Order Placed`. The `Negotiation` stage is highly volatile.
+
+---
+
 ## Author
 
 **Prayag Raj Mathuria**  
