@@ -1,160 +1,129 @@
 # DealerPulse — Technical Decisions & Architecture
 
-## Product Vision
+## What is This?
 
-DealerPulse is a **dealership performance analytics platform** designed for executive-level decision making. The core insight behind the product is that automotive dealership networks generate enormous volumes of lead, sales, and delivery data — but most of it lives in spreadsheets or siloed CRMs where patterns are invisible.
+DealerPulse is a performance analytics dashboard built for automotive dealership networks. The idea is simple: dealerships generate a ton of data — leads, test drives, negotiations, deliveries — but most of this ends up in spreadsheets where patterns stay hidden. This dashboard surfaces those patterns.
 
-This dashboard transforms raw operational data into three layers of actionable intelligence:
+The interface is structured as a three-level drill-down:
 
-1. **Executive Overview** — Network-wide KPIs, branch scoreboard, revenue trends, conversion funnel, and source channel analysis. A CEO should be able to assess network health in 30 seconds.
-2. **Branch Deep Dive** — Natural language summary, target vs. actual tracking, rep leaderboard, lost deal analysis, and active pipeline monitoring. A regional manager can identify exactly where to intervene.
-3. **Rep Profile** — Individual performance metrics, lead status distribution, and full lead audit trail. Sales directors can coach effectively with data.
+1. **Executive Overview** — How is the entire network performing? Where are the problems?
+2. **Branch Deep Dive** — What's happening at a specific branch? Who's performing, who's not?
+3. **Representative Profile** — How is an individual sales officer executing?
 
-The navigation is intentional: **Overview → Branch → Rep**. Each click narrows the scope while deepening the analysis, mirroring how dealership leadership actually thinks about their business.
+Each level answers a progressively more specific question.
 
 ---
 
-## Architecture Decisions
+## Key Architecture Choices
 
-### Client-Side Processing Engine
+### Everything Runs in the Browser
 
-**Decision:** All data processing happens in the browser. No server-side API calls for computations.
+There's no backend API for computations. The JSON dataset gets loaded once, and all filtering, aggregation, and insight generation happens client-side.
 
-**Why:** The dataset is a finite, bounded JSON file (typically < 5MB for a multi-branch dealership). Processing it client-side means:
-- **Instant reactivity** — Changing a date filter recomputes all metrics in < 10ms with zero network latency
-- **No backend infrastructure** — The app can be deployed as a static site on any CDN
-- **Offline capability** — Once loaded, the dashboard works without a network connection
-- **Zero cold starts** — No serverless function spin-up time
+This was intentional. The dataset for a multi-branch dealership is well under 5MB. Sending it to a server, waiting for a response, and rendering the result adds latency that serves no purpose here. With client-side processing, changing a date filter recomputes metrics in under 10ms. No spinners, no loading states for data that's already in memory.
 
-The tradeoff is that initial load requires fetching the full dataset (~1-2MB gzipped). For a dataset of this size, this is negligible on any modern connection.
+The tradeoff: initial page load pulls the full dataset. For a file this size, that's a one-time ~1-2 second cost that I considered acceptable.
 
-### Dataset-Agnostic Design
+### Dataset-Agnostic by Design
 
-**Decision:** The dashboard dynamically adapts to any dataset that conforms to the `DealershipData` schema. Nothing is hardcoded to specific branch names, date ranges, source channels, or model names.
+Early on, I realized that hardcoding branch names, date ranges, or source channels would make the dashboard useless for any dataset other than the one shipped with it. So I refactored everything to be derived from the data:
 
-**Why:** A production tool must handle different dealership networks. The implementation:
-- Extracts available months from `lead.created_at` timestamps to build dynamic date presets
-- Reads branches from `data.branches` instead of hardcoding IDs
-- Derives source channel labels from the data itself (with a `formatSnakeCase` fallback for unknown sources)
-- Generates chart axis labels using `date-fns` formatting, not lookup tables
-- Computes the "reference date" (used for pipeline aging) from the latest timestamp in the dataset, not a hardcoded `2025-12-31`
+- **Branches** are read from `data.branches` — the sidebar populates dynamically
+- **Date presets** (All, Q2, Q3...) are computed from the actual months present in `leads.created_at`. If the dataset spans more than 1 year, year-level presets (2023, 2024, 2025) appear automatically alongside quarter presets for the most recent year
+- **Source channels** are extracted at runtime — if a new dataset has `"google_ads"` instead of `"social_media"`, the charts adapt without code changes
+- **The reference date** (used for pipeline aging) is derived from the latest timestamp in the dataset, not a hardcoded `2025-12-31`
 
-**File upload:** Users can upload a different JSON dataset directly in the sidebar. The app validates the schema, resets all filters to the new data's date range, and re-renders instantly. A "Reset to Default" option restores the original dataset.
+Users can upload their own JSON dataset directly in the sidebar. The app validates the schema, resets filters to match the new data's date range, and re-renders everything. A "Reset to Default" button restores the original dataset.
 
-### Deterministic Insight Engine (Not LLM-Powered)
+### Insights Without an LLM
 
-**Decision:** The natural language summaries and alerts are generated by a deterministic algorithm, not an LLM API.
+The summary sections ("Smart Branch Analysis" and "Network Performance Summary") are written in natural language, but they're generated by a deterministic algorithm — not a language model.
 
-**Why:** This was a deliberate engineering choice, not a limitation:
-- **Zero latency** — Summaries render instantly with the rest of the page. No loading spinners for AI responses.
-- **100% reliability** — No API keys to expire, no rate limits, no hallucinated metrics. Every number in the summary is computed from the actual data.
-- **Deterministic** — The same data always produces the same summary. This is critical for a financial analytics tool where consistency matters.
-- **No cost** — No per-request API charges. The dashboard can serve unlimited users at zero marginal cost.
+I considered integrating an LLM API, but the tradeoffs didn't make sense for this use case:
 
-The engine computes:
-- Branch rankings relative to network average
-- Target achievement rates
-- Top performer spotlights (best rep by conversion)
-- Lost reason analysis with revenue impact
-- Pipeline risk assessment using `expected_close_date` overdue detection
-- Delivery time comparisons against network benchmarks
-- Source channel effectiveness
-- Actionable recommendations based on performance thresholds
+- Summary generation needs to be instant. Adding a 2-3 second API round-trip to every page load would degrade the experience noticeably.
+- The summaries need to be numerically precise. LLMs can hallucinate figures. When a branch summary says "37.2% conversion rate," that number has to match what's on the page.
+- No API key management, no rate limits, no cost per request.
 
-This produces a 4-7 sentence narrative that is more precise and actionable than what a general-purpose LLM would generate, because it has full context of the data model.
+The insight engine computes branch rankings, identifies the top-performing representative, flags overdue pipeline leads, and generates actionable recommendations — all from the data. It's less creative than an LLM, but for a financial analytics tool, consistency and accuracy are more important than creativity.
 
 ### What-If Scenario Simulator
 
-**Decision:** Include an interactive "What-If" tool that models the revenue impact of funnel improvements.
+The best dashboards don't just tell you what happened — they help you think about what to do next. The What-If simulator lets users pick a funnel stage transition (e.g., "Test Drive → Negotiation") and model the impact of improving conversion at that stage.
 
-**Why:** The most valuable analytics tools don't just report what happened — they help leaders decide what to do next. The simulator:
-- Lets users pick any funnel stage transition (e.g., "Test Drive → Negotiation")
-- Adjusts the conversion by a user-specified percentage (1-30%)
-- Computes projected additional deliveries by applying downstream conversion rates
-- Estimates revenue impact using the actual average deal value from delivered leads
+The math is straightforward: if the current test_drive → negotiation conversion is 65%, and you improve it by 10 percentage points, what does that mean downstream? The simulator applies the actual downstream conversion rates from the data to estimate additional deliveries and revenue impact.
 
-This is pure computation — no backend needed. The math is transparent: if improving test_drive→negotiation conversion by 10% produces 15 additional leads at that stage, and the downstream (negotiation→order→delivery) conversion is 60%, that's ~9 additional deliveries × average deal value.
+The slider caps at whatever gets you to 100% conversion — you can't model impossible improvements
 
-### Zustand for State Management
-
-**Decision:** Single Zustand store holds all global state: loaded data, date filters, theme, and UI state.
-
-**Why:** 
-- The loaded dataset is needed by the sidebar (branch list), date picker (available months), and all three page types. Zustand makes this a single source of truth without prop drilling or React Context performance issues.
-- When a user uploads a new dataset, updating the store triggers a re-render cascade that updates everything: sidebar links, date picker presets, and all computed metrics.
-- Zustand's API is minimal (no boilerplate reducers), and the store is < 80 lines of code.
-
-### Date Range Architecture
-
-**Decision:** Date ranges are `{ start: "YYYY-MM", end: "YYYY-MM" }` strings, not Date objects.
-
-**Why:** All temporal data in the dealership schema uses month-level granularity (targets are per-month, leads have `created_at` timestamps that we truncate to month). Using YYYY-MM strings means:
-- Simple lexicographic comparison (`"2025-06" >= "2025-06"`) for filtering
-- No timezone bugs from Date object construction
-- Direct matching against the `targets.month` field
-- Human-readable in the store and debugger
-
-The date picker derives dynamic presets from the data:
-- **All** — Full date range of the dataset
-- **Q1/Q2/Q3/Q4** — Only quarters that actually have data
-- **Custom** — Two dropdown selectors for arbitrary month ranges
-
----
-
-## Data Patterns & Engineering Responses
 
 ### Expected Close Date Tracking
 
-The `expected_close_date` field on leads was present but unused. Analysis showed a significant pattern: many active pipeline leads have expected close dates in the past, indicating slippage.
+The `expected_close_date` field existed in the data but wasn't being used. This felt like a missed opportunity — it's a natural indicator of pipeline health.
 
-**Response:** 
-- Pipeline table rows now show an "OVERDUE" badge with a highlighted row for leads past their expected close date
-- Overdue leads sort to the top of the pipeline table
-- A dedicated alert fires when ≥3 leads are overdue, calculating the total revenue at risk
-- The branch summary engine includes overdue count in its narrative
+I used it to flag "overdue" leads: pipeline leads where the expected close date has passed but the deal hasn't progressed beyond negotiation. These leads get sorted to the top of the pipeline table with an OVERDUE badge and highlighted rows. The insight engine also fires an alert when multiple leads are overdue, calculating the total revenue at risk.
 
-### Lost Reason Null Values
+One important nuance: leads with `status: 'order_placed'` are explicitly excluded from overdue detection. If a customer has already placed an order, the deal is effectively closed — it's just waiting for delivery.
 
-Some lost leads have `lost_reason: null`, which previously caused them to be silently excluded from lost reason analysis.
+### Lost Reason Handling
 
-**Response:** Null lost reasons are now mapped to "Unknown" and included in the breakdown. This ensures the lost lead count in the reason chart matches the actual lost lead count — a data integrity principle.
-
-### Source Channel Dynamism
-
-The original implementation hardcoded the six source channels from the provided dataset. A different dealership might use different channels (e.g., "dealer_website", "google_ads", "corporate_referral").
-
-**Response:** Source metrics are now computed from `new Set(leads.map(l => l.source))` — whatever sources exist in the data automatically appear in charts and metrics. Labels use a known dictionary with a `formatSnakeCase` fallback.
+Some lost leads in the dataset have `lost_reason: null`. The original code silently dropped these from the lost reason breakdown, which meant the chart totals didn't match the actual lost count. I mapped null to "Unknown" so every lost lead is accounted for. Small fix, but it matters for data integrity.
 
 ---
 
-## Performance Characteristics
+## State Management
 
-- **Initial load:** ~800ms (fetch + parse JSON + initial render)
-- **Filter change:** < 10ms recompute for 300-500 leads across 5 branches
-- **Chart rendering:** Recharts with SafeResponsiveContainer (custom wrapper that measures DOM before rendering to prevent negative-dimension errors in CSS Grid layouts)
-- **Bundle size:** Next.js 16 with Turbopack, tree-shaken Recharts, zero unnecessary dependencies
+The app uses a single Zustand store that holds:
+- The loaded dataset
+- Current date range filters
+- Theme preference
+- UI state (sidebar open/closed)
+
+Using a centralized store solved several problems at once: the sidebar needs branch data, the date picker needs available months, and uploading a new file needs to update everything simultaneously. Zustand's API is minimal and it works well with Next.js App Router.
+
+### Date Range as YYYY-MM Strings
+
+Date ranges use `{ start: "2025-06", end: "2025-12" }` format instead of Date objects. Since all temporal operations in this app work at month granularity (targets are monthly, filtering is by month), string comparison keeps things simple and avoids timezone edge cases that Date objects introduce.
+
+---
+
+## Summary Readability
+
+The NL summaries went through a few iterations. The initial version was a dense paragraph — accurate but hard to scan. The current version breaks the summary into structured, color-coded sections:
+
+- **Green background** for positive insights (outperforming average, top performer)
+- **Red background** for areas needing attention (below average, overdue pipeline)
+- **Grey background** for neutral data points (target numbers, channel info)
+
+Each sentence gets its own row with an appropriate icon. The goal is that a branch manager can scan the summary in 5 seconds and immediately see what needs action.
 
 ---
 
 ## Technology Stack
 
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| Framework | Next.js 16 (App Router) | File-based routing, server components for layout, Turbopack for fast dev |
-| State | Zustand | Lightweight, no boilerplate, works seamlessly with Next.js |
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Framework | Next.js 16 (App Router) | File-based routing, React Server Components for layout perf |
+| State | Zustand | Lightweight, zero boilerplate, great DX |
 | Charts | Recharts | Composable, React-native, handles responsive layouts |
-| Styling | CSS Variables + Tailwind v4 | Design tokens for theming, utility classes where needed |
-| Types | TypeScript strict mode | Compile-time safety for data transformations |
-| Date handling | date-fns | Tree-shakeable, immutable, locale-aware |
+| Styling | CSS Variables + Tailwind v4 | Design tokens for light/dark theming |
+| Types | TypeScript (strict) | Compile-time safety for data transformations |
+| Dates | date-fns | Tree-shakeable, immutable, no timezone surprises |
 
 ---
 
-## Future Roadmap
+## What I'd Build Next
 
-If this were to evolve into a production SaaS:
+If this were evolving into a production product:
 
-1. **Real-time data pipeline** — Replace static JSON with a WebSocket connection to the dealership CRM. Zustand store already supports `setData()` for live updates.
-2. **Multi-tenant auth** — Each dealership network gets isolated data. The dataset-agnostic architecture means no code changes per tenant.
-3. **Automated alerts** — The alert engine already generates structured `Alert` objects with severity levels. Adding email/Slack delivery is a notification layer, not a logic change.
-4. **Export & reporting** — PDF generation of the branch summary + KPIs for board meetings. The deterministic summary engine ensures consistent report quality.
-5. **Mobile-optimized views** — The current responsive layout works on tablets. A dedicated mobile view would prioritize the KPI cards and alert list for managers in the field.
+1. **Live data integration** — Replace static JSON with a WebSocket pipeline from the dealership CRM. The Zustand store already accepts `setData()`, so the rendering layer doesn't change.
+2. **Multi-tenant isolation** — Each dealership network gets its own data. The dataset-agnostic architecture means the code doesn't need per-tenant customization.
+3. **Scheduled alerts** — The alert engine already generates structured `Alert` objects with severity levels. Adding email/Slack notifications is a delivery layer, not a logic change.
+4. **PDF export** — The summary + KPIs would make a good board report. The deterministic engine ensures consistent quality across exports.
+5. **Field-optimized mobile view** — Current layout is responsive, but a dedicated mobile experience would prioritize pipeline alerts and overdue follow-ups for managers on the go.
+
+---
+
+## Author
+
+**Prayag Raj Mathuria**  
+Email: prayag07.mathuria@gmail.com

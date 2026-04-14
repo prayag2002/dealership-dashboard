@@ -1,19 +1,25 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Upload, RotateCcw, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, RotateCcw, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { parseUploadedData } from '../../lib/data-loader';
 import { useFilterStore } from '../../store/filters';
 
 export default function DataUploader() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { setData, isCustomDataset } = useFilterStore();
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setStatus('loading');
+    setMessage('Parsing dataset...');
+
+    // Small delay to let the UI render the loading state
+    await new Promise((r) => setTimeout(r, 50));
 
     try {
       const data = await parseUploadedData(file);
@@ -33,6 +39,8 @@ export default function DataUploader() {
   };
 
   const handleReset = async () => {
+    setStatus('loading');
+    setMessage('Resetting...');
     try {
       const res = await fetch('/dealership_data.json');
       const data = await res.json();
@@ -61,19 +69,21 @@ export default function DataUploader() {
       <button
         onClick={() => inputRef.current?.click()}
         className="sidebar-link"
+        disabled={status === 'loading'}
         style={{
           width: '100%',
           border: 'none',
-          cursor: 'pointer',
+          cursor: status === 'loading' ? 'wait' : 'pointer',
           background: 'transparent',
           fontSize: 13,
+          opacity: status === 'loading' ? 0.6 : 1,
         }}
       >
-        <Upload size={18} />
-        <span>Upload Dataset</span>
+        {status === 'loading' ? <Loader size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={18} />}
+        <span>{status === 'loading' ? 'Processing...' : 'Upload Dataset'}</span>
       </button>
 
-      {isCustomDataset && (
+      {isCustomDataset && status !== 'loading' && (
         <button
           onClick={handleReset}
           className="sidebar-link"
@@ -91,7 +101,7 @@ export default function DataUploader() {
         </button>
       )}
 
-      {status !== 'idle' && (
+      {(status === 'success' || status === 'error') && (
         <div
           style={{
             display: 'flex',

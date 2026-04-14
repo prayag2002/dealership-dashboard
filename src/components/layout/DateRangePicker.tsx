@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useFilterStore, extractAvailableMonths, getFullRange } from '../../store/filters';
-import { formatMonthShort, formatMonth } from '../../lib/utils';
+import { useFilterStore, extractAvailableMonths } from '../../store/filters';
+import { formatMonth } from '../../lib/utils';
 import { Calendar, ChevronDown } from 'lucide-react';
 
-/** Derive quarter presets from available months */
+/** Derive smart presets from available months */
 function derivePresets(months: string[]): { label: string; start: string; end: string }[] {
   if (months.length === 0) return [];
   const first = months[0];
@@ -15,26 +15,47 @@ function derivePresets(months: string[]): { label: string; start: string; end: s
     { label: 'All', start: first, end: last },
   ];
 
-  // Group months by quarter
+  // Extract unique years
+  const years = Array.from(new Set(months.map((m) => m.split('-')[0]))).sort();
+
+  // If multi-year data, add year presets
+  if (years.length > 1) {
+    years.forEach((year) => {
+      const yearMonths = months.filter((m) => m.startsWith(year));
+      if (yearMonths.length > 0) {
+        presets.push({
+          label: year,
+          start: yearMonths[0],
+          end: yearMonths[yearMonths.length - 1],
+        });
+      }
+    });
+  }
+
+  // Add quarter presets for current context
+  // For multi-year: only show quarters of the latest year to avoid too many buttons
+  const targetYear = years[years.length - 1];
+  const targetMonths = months.filter((m) => m.startsWith(targetYear));
+
   const quarterMap = new Map<string, string[]>();
-  months.forEach((m) => {
-    const [y, mo] = m.split('-').map(Number);
+  targetMonths.forEach((m) => {
+    const mo = parseInt(m.split('-')[1], 10);
     const q = Math.ceil(mo / 3);
-    const key = `${y}-Q${q}`;
+    const key = `Q${q}`;
     if (!quarterMap.has(key)) quarterMap.set(key, []);
     quarterMap.get(key)!.push(m);
   });
 
-  // Sort quarters chronologically
   const sortedQuarters = Array.from(quarterMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-
-  sortedQuarters.forEach(([key, qMonths]) => {
-    const label = key.split('-')[1]; // "Q1", "Q2", etc.
-    presets.push({
-      label,
-      start: qMonths[0],
-      end: qMonths[qMonths.length - 1],
-    });
+  sortedQuarters.forEach(([label, qMonths]) => {
+    // Only add quarter if it has data and we don't already have too many presets
+    if (presets.length < 8) {
+      presets.push({
+        label: years.length > 1 ? `${label} '${targetYear.slice(2)}` : label,
+        start: qMonths[0],
+        end: qMonths[qMonths.length - 1],
+      });
+    }
   });
 
   return presets;
@@ -55,7 +76,7 @@ export default function DateRangePicker() {
   const isCustomActive = !presets.some((p) => isPresetActive(p));
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
       <div className="date-picker">
         {presets.map((preset) => (
           <button

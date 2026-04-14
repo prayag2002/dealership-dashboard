@@ -51,7 +51,7 @@ export default function RepPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ width: 40, height: 40, border: '3px solid var(--border-primary)', borderTopColor: 'var(--color-blue)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
-            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Loading rep data...</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Loading representative data...</p>
           </div>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
@@ -60,13 +60,13 @@ export default function RepPage() {
   }
 
   const rep = data.sales_reps.find((r) => r.id === repId);
-  if (!rep) return <div className="page-container"><p>Rep not found</p></div>;
+  if (!rep) return <div className="page-container"><p>Representative not found</p></div>;
 
   const branch = data.branches.find((b) => b.id === rep.branch_id);
   const allRepMetrics = computeRepMetrics(data, dateRange, rep.branch_id);
   const repMetric = allRepMetrics.find((r) => r.rep.id === repId);
 
-  if (!repMetric) return <div className="page-container"><p>No data for this rep</p></div>;
+  if (!repMetric) return <div className="page-container"><p>No data for this representative</p></div>;
 
   const branchMetrics = computeBranchMetrics(data, dateRange).find(
     (b) => b.branch.id === rep.branch_id
@@ -145,8 +145,8 @@ export default function RepPage() {
 
       {!hasData ? (
         <EmptyState
-          title="No data for this rep"
-          description="No leads found for this rep in the selected time range. Try adjusting the date filter."
+          title="No data for this representative"
+          description="No leads found for this representative in the selected time range. Try adjusting the date filter."
         />
       ) : (
         <>

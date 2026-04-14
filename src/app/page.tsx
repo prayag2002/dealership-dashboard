@@ -82,9 +82,33 @@ export default function OverviewPage() {
             <div className="summary-callout animate-in">
               <div className="summary-label">
                 <Sparkles size={14} />
-                Performance Summary
+                Network Performance Summary
               </div>
-              <p>{networkSummary}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                {networkSummary.split(/\.\s+/).filter(s => s.trim()).map((sentence, i) => {
+                  const text = sentence.endsWith('.') ? sentence : sentence + '.';
+                  const isPositive = text.includes('leads with') || text.includes('strongest');
+                  const isNegative = text.includes('trails') || text.includes('Focus areas') || text.includes('contacted in 7+');
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: isNegative ? 'var(--color-rose-light)' : isPositive ? 'var(--color-emerald-light)' : 'var(--bg-secondary)',
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      {text}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

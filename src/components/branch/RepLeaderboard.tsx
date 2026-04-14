@@ -1,24 +1,59 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { RepMetrics } from '../../lib/types';
 import { formatCurrency, formatPercent } from '../../lib/utils';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ArrowUpDown } from 'lucide-react';
 
 interface RepLeaderboardProps {
   reps: RepMetrics[];
   branchAvgConversion: number;
 }
 
+type SortKey = 'conversionRate' | 'totalLeads' | 'delivered' | 'revenue';
+
+const sortOptions: { key: SortKey; label: string }[] = [
+  { key: 'conversionRate', label: 'Conv. %' },
+  { key: 'delivered', label: 'Delivered' },
+  { key: 'revenue', label: 'Revenue' },
+  { key: 'totalLeads', label: 'Leads' },
+];
+
 export default function RepLeaderboard({ reps, branchAvgConversion }: RepLeaderboardProps) {
   const router = useRouter();
-  const sorted = [...reps].sort((a, b) => b.conversionRate - a.conversionRate);
+  const [sortBy, setSortBy] = useState<SortKey>('conversionRate');
+
+  const sorted = [...reps].sort((a, b) => b[sortBy] - a[sortBy]);
 
   return (
     <div className="card animate-in">
       <div className="card-header">
-        <span className="card-title">Rep Leaderboard</span>
-        <span className="card-subtitle">Sorted by conversion rate</span>
+        <span className="card-title">Representative Leaderboard</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ArrowUpDown size={12} style={{ color: 'var(--text-tertiary)' }} />
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginRight: 4 }}>Sort:</span>
+          {sortOptions.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setSortBy(opt.key)}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 11,
+                fontWeight: 500,
+                border: '1px solid',
+                borderColor: sortBy === opt.key ? 'var(--color-blue)' : 'var(--border-primary)',
+                background: sortBy === opt.key ? 'var(--color-blue-light)' : 'transparent',
+                color: sortBy === opt.key ? 'var(--color-blue)' : 'var(--text-tertiary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
@@ -36,7 +71,7 @@ export default function RepLeaderboard({ reps, branchAvgConversion }: RepLeaderb
           </thead>
           <tbody>
             {sorted.map((rep, i) => {
-              const isTop = i === 0 && rep.conversionRate > 0;
+              const isTop = i === 0 && rep[sortBy] > 0;
               return (
                 <tr
                   key={rep.rep.id}

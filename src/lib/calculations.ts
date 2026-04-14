@@ -390,7 +390,9 @@ export function getActivePipelineLeads(
     )
     .map((l) => {
       const rep = data.sales_reps.find((r) => r.id === l.assigned_to);
-      const isOverdue = l.expected_close_date
+      // Only pre-order stages can be "overdue" — order_placed already closed the deal
+      const preOrderStages = ['new', 'contacted', 'test_drive', 'negotiation'];
+      const isOverdue = l.expected_close_date && preOrderStages.includes(l.status)
         ? new Date(l.expected_close_date) < refDate
         : false;
       return {
