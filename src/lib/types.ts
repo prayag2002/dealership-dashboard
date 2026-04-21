@@ -119,7 +119,7 @@ export interface RepMetrics {
   rep: SalesRep;
   branchName: string;
   totalLeads: number;
-  delivered: number;
+  successes: number;
   lost: number;
   conversionRate: number;
   revenue: number;

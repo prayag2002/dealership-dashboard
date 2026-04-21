@@ -11,11 +11,11 @@ interface RepLeaderboardProps {
   branchAvgConversion: number;
 }
 
-type SortKey = 'conversionRate' | 'totalLeads' | 'delivered' | 'revenue';
+type SortKey = 'conversionRate' | 'totalLeads' | 'successes' | 'revenue';
 
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'conversionRate', label: 'Conv. %' },
-  { key: 'delivered', label: 'Delivered' },
+  { key: 'successes', label: 'Successes' },
   { key: 'revenue', label: 'Revenue' },
   { key: 'totalLeads', label: 'Leads' },
 ];
@@ -63,7 +63,7 @@ export default function RepLeaderboard({ reps, branchAvgConversion }: RepLeaderb
               <th>Name</th>
               <th>Role</th>
               <th>Leads</th>
-              <th>Delivered</th>
+              <th>Successes</th>
               <th>Conv. %</th>
               <th>Revenue</th>
               <th></th>
@@ -92,7 +92,7 @@ export default function RepLeaderboard({ reps, branchAvgConversion }: RepLeaderb
                     </span>
                   </td>
                   <td>{rep.totalLeads}</td>
-                  <td>{rep.delivered}</td>
+                  <td>{rep.successes}</td>
                   <td>
                     <span style={{
                       fontWeight: 600,

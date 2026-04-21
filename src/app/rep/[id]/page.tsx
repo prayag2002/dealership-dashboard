@@ -97,7 +97,7 @@ export default function RepPage() {
     {
       title: 'Leads Handled',
       value: String(repMetric.totalLeads),
-      subtitle: `${repMetric.delivered} delivered, ${repMetric.lost} lost`,
+      subtitle: `${repMetric.successes} successful, ${repMetric.lost} lost`,
       icon: Users,
       color: 'blue',
     },
@@ -111,14 +111,14 @@ export default function RepPage() {
     {
       title: 'Revenue Generated',
       value: formatCurrency(repMetric.revenue, true),
-      subtitle: 'From delivered deals',
+      subtitle: 'From successful deals',
       icon: IndianRupee,
       color: 'violet',
     },
     {
       title: 'Avg Cycle Time',
       value: repMetric.avgCycleTime > 0 ? `${repMetric.avgCycleTime.toFixed(0)} days` : 'N/A',
-      subtitle: 'Lead to delivery',
+      subtitle: 'Lead to success',
       icon: Timer,
       color: 'amber',
     },

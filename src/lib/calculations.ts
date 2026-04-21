@@ -143,19 +143,19 @@ export function computeRepMetrics(
       data.leads.filter((l) => l.assigned_to === rep.id),
       range
     );
-    const delivered = leads.filter((l) => l.status === 'delivered');
+    const successes = leads.filter((l) => l.status === 'delivered' || l.status === 'order_placed');
     const lost = leads.filter((l) => l.status === 'lost');
     const active = leads.filter((l) =>
-      ['new', 'contacted', 'test_drive', 'negotiation', 'order_placed'].includes(l.status)
+      ['new', 'contacted', 'test_drive', 'negotiation'].includes(l.status)
     );
 
-    // Average cycle time: days from created_at to delivered timestamp
-    const cycleTimes = delivered
+    // Average cycle time: days from created_at to order_placed (or delivered) timestamp
+    const cycleTimes = successes
       .map((l) => {
-        const deliveredEntry = l.status_history.find((h) => h.status === 'delivered');
-        if (!deliveredEntry) return 0;
+        const endEntry = l.status_history.find((h) => h.status === 'order_placed' || h.status === 'delivered');
+        if (!endEntry) return 0;
         const start = new Date(l.created_at).getTime();
-        const end = new Date(deliveredEntry.timestamp).getTime();
+        const end = new Date(endEntry.timestamp).getTime();
         return Math.round((end - start) / (1000 * 60 * 60 * 24));
       })
       .filter((d) => d > 0);
@@ -166,10 +166,10 @@ export function computeRepMetrics(
       rep,
       branchName: branch?.name || '',
       totalLeads: leads.length,
-      delivered: delivered.length,
+      successes: successes.length,
       lost: lost.length,
-      conversionRate: leads.length > 0 ? (delivered.length / leads.length) * 100 : 0,
-      revenue: delivered.reduce((sum, l) => sum + l.deal_value, 0),
+      conversionRate: leads.length > 0 ? (successes.length / leads.length) * 100 : 0,
+      revenue: successes.reduce((sum, l) => sum + l.deal_value, 0),
       avgCycleTime:
         cycleTimes.length > 0
           ? cycleTimes.reduce((sum, d) => sum + d, 0) / cycleTimes.length
