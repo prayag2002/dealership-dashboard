@@ -1,126 +1,127 @@
 # DealerPulse — Technical Decisions & Architecture
 
-## What is This?
+## What I Built and Why
 
-DealerPulse is a performance analytics dashboard built for automotive dealership networks. The idea is simple: dealerships generate a ton of data — leads, test drives, negotiations, deliveries — but most of this ends up in spreadsheets where patterns stay hidden. This dashboard surfaces those patterns.
+DealerPulse is a dataset-agnostic analytics platform for automotive dealership networks. It transforms raw CRM data into structured, actionable intelligence across a three-level drill-down:
 
-The interface is structured as a three-level drill-down:
+1. **Network Overview** — Vital signs of the entire business: revenue, conversion, pipeline health, target achievement, and branch-level comparisons.
+2. **Branch Deep Dive** — Granular branch performance: representative leaderboard, lost deal analysis, source channel efficiency, delivery delays, and live pipeline.
+3. **Representative Profile** — Individual rep performance: monthly trends, lead status distribution, cycle time, and pipeline ownership.
 
-1. **Executive Overview** — How is the entire network performing? Where are the problems?
-2. **Branch Deep Dive** — What's happening at a specific branch? Who's performing, who's not?
-3. **Representative Profile** — How is an individual sales officer executing?
-
-Each level answers a progressively more specific question.
+Each level answers a progressively more specific question, so leadership can go from "the network is underperforming" to "Priya's negotiation-stage leads at Downtown Toyota need follow-up" in three clicks.
 
 ---
 
-## Key Architecture Choices
+## Feature Set
 
-### Everything Runs in the Browser
+### Core Analytics
 
-There's no backend API for computations. The JSON dataset gets loaded once, and all filtering, aggregation, and insight generation happens client-side.
+| Feature | Description |
+|---------|-------------|
+| **KPI Cards** | Revenue, conversion rate, pipeline value, and delivery time — at both network and branch level, with color-coded comparison against targets/averages |
+| **Monthly Target vs Actual** | Grouped bar charts comparing actual deliveries and revenue against monthly targets, making shortfalls immediately visible |
+| **Conversion Funnel** | Tracks lead progression from New → Contacted → Test Drive → Negotiation → Order Placed → Delivered. Shows both survival rate from initial leads and stage-to-stage drop-off |
+| **Revenue by Model** | Horizontal bar chart ranking vehicle models by total revenue generated |
+| **Lead Source Performance** | Comparative conversion rates across all acquisition channels (Walk-in, Website, Social Media, Referral, etc.) |
+| **Lost Deal Analysis** | Pie chart + breakdown of why deals were lost, with revenue impact per reason |
+| **Delivery Delay Analysis** | Surfaces delay reasons (financing, inventory, logistics) with counts per branch |
 
-This was intentional. The dataset for a multi-branch dealership is well under 5MB. Sending it to a server, waiting for a response, and rendering the result adds latency that serves no purpose here. With client-side processing, changing a date filter recomputes metrics in under 10ms. No spinners, no loading states for data that's already in memory.
+### Pipeline Intelligence
 
-The tradeoff: initial page load pulls the full dataset. For a file this size, that's a one-time ~1-2 second cost that I considered acceptable.
+| Feature | Description |
+|---------|-------------|
+| **Active Pipeline Table** | Full pipeline view with representative, status, deal value, days since last activity, and expected close date |
+| **Overdue Detection** | Leads past their `expected_close_date` are flagged with an OVERDUE badge, auto-sorted to the top, and highlighted in red. Only pre-order stages (new → negotiation) are flagged — `order_placed` leads are correctly labeled "Awaiting Delivery" instead |
+| **Cold Lead Aging** | Leads with 7+ days of inactivity in pre-order stages get a COLD badge. The engine excludes `order_placed` leads since they've already been won |
 
-### Dataset-Agnostic by Design
+### Smart Insights
 
-Early on, I realized that hardcoding branch names, date ranges, or source channels would make the dashboard useless for any dataset other than the one shipped with it. So I refactored everything to be derived from the data:
+| Feature | Description |
+|---------|-------------|
+| **Natural Language Summaries** | Deterministic, color-coded executive summaries generated per branch and for the network. Each sentence is categorized (positive / negative / neutral) with an icon for instant scanning |
+| **Smart Alerts** | Auto-generated alerts: critically underperforming branches, cold leads by branch, source channel inefficiency, overdue pipeline, dominant lost reasons, and trending branches. Branch pages show only branch-specific alerts |
+| **Representative Leaderboard** | Multi-column sortable table (by conversion %, successes, revenue, leads). Highlights the top performer with a green row. 
+| **Dual Top Performer** | Branch summaries highlight both the top rep by conversion and the top rep by revenue — when they differ, both are shown |
 
-- **Branches** are read from `data.branches` — the sidebar populates dynamically
-- **Date presets** (All, Q2, Q3...) are computed from the actual months present in `leads.created_at`. If the dataset spans more than 1 year, year-level presets (2023, 2024, 2025) appear automatically alongside quarter presets for the most recent year
-- **Source channels** are extracted at runtime — if a new dataset has `"google_ads"` instead of `"social_media"`, the charts adapt without code changes
-- **The reference date** (used for pipeline aging) is derived from the latest timestamp in the dataset, not a hardcoded `2025-12-31`
+### Interactive Tools
 
-Users can upload their own JSON dataset directly in the sidebar. The app validates the schema, resets filters to match the new data's date range, and re-renders everything. A "Reset to Default" button restores the original dataset.
-
-### Insights Without an LLM
-
-The summary sections ("Smart Branch Analysis" and "Network Performance Summary") are written in natural language, but they're generated by a deterministic algorithm — not a language model.
-
-I considered integrating an LLM API, but the tradeoffs didn't make sense for this use case:
-
-- Summary generation needs to be instant. Adding a 2-3 second API round-trip to every page load would degrade the experience noticeably.
-- The summaries need to be numerically precise. LLMs can hallucinate figures. When a branch summary says "37.2% conversion rate," that number has to match what's on the page.
-- No API key management, no rate limits, no cost per request.
-
-The insight engine computes branch rankings, identifies the top-performing representative, flags overdue pipeline leads, and generates actionable recommendations — all from the data. It's less creative than an LLM, but for a financial analytics tool, consistency and accuracy are more important than creativity.
-
-### What-If Scenario Simulator
-
-The best dashboards don't just tell you what happened — they help you think about what to do next. The What-If simulator lets users pick a funnel stage transition (e.g., "Test Drive → Negotiation") and model the impact of improving conversion at that stage.
-
-The math is straightforward: if the current test_drive → negotiation conversion is 65%, and you improve it by 10 percentage points, what does that mean downstream? The simulator applies the actual downstream conversion rates from the data to estimate additional deliveries and revenue impact.
-
-The slider caps at whatever gets you to 100% conversion — you can't model impossible improvements
-
-
-### Expected Close Date Tracking
-
-The `expected_close_date` field a natural indicator of pipeline health. I used it to flag "overdue" leads: pipeline leads where the expected close date has passed but the deal hasn't progressed beyond negotiation. These leads get sorted to the top of the pipeline table with an OVERDUE badge and highlighted rows. The insight engine also fires an alert when multiple leads are overdue, calculating the total revenue at risk.
-
-
-## State Management
-
-The app uses a single Zustand store that holds:
-- The loaded dataset
-- Current date range filters
-- Theme preference
-- UI state (sidebar open/closed)
-
-Using a centralized store solved several problems at once: the sidebar needs branch data, the date picker needs available months, and uploading a new file needs to update everything simultaneously. Zustand's API is minimal and it works well with Next.js App Router.
-
-### Date Range as YYYY-MM Strings
-
-Date ranges use `{ start: "2025-06", end: "2025-12" }` format instead of Date objects. Since all temporal operations in this app work at month granularity (targets are monthly, filtering is by month), string comparison keeps things simple and avoids timezone edge cases that Date objects introduce.
+| Feature | Description |
+|---------|-------------|
+| **What-If Simulator** | Pick any funnel stage transition (e.g., Test Drive → Negotiation), adjust the conversion improvement via slider, and see projected additional deliveries and revenue impact. Uses actual downstream rates from the data |
+| **Custom Date Range** | Preset periods (All, Q2, Q3, Q4) plus fully custom month-level range selection. Presets are dynamically generated from the dataset's date span |
+| **Dynamic Data Upload** | Upload any schema-compliant JSON file via the sidebar. The app validates, resets filters to match the new date range, and re-renders everything. A reset button restores the default dataset |
+| **Light / Dark Theme** | Full theme toggle with CSS variable-based design tokens. Persists via Zustand store |
 
 ---
 
-## Summary Readability
+## Key Product Decisions
 
-The NL summaries went through a few iterations. The initial version was a dense paragraph — accurate but hard to scan. The current version breaks the summary into structured, color-coded sections:
+### Deterministic Insights Over LLM
+The summaries are generated by a rule-based engine, not a language model. Reasons:
+- **Speed**: Instant generation vs 2-3s API round-trip per page load
+- **Precision**: When a summary says "37.2% conversion," it's computed from the same math the charts use — no hallucination risk
+- **Zero infrastructure**: No API keys, no rate limits, no per-request cost
 
-- **Green background** for positive insights (outperforming average, top performer)
-- **Red background** for areas needing attention (below average, overdue pipeline)
-- **Grey background** for neutral data points (target numbers, channel info)
+### Dataset-Agnostic Architecture
+Nothing is hardcoded to the provided dataset:
+- Branch names, sidebar navigation, and date presets are derived from the data at runtime
+- Source channels are extracted dynamically — if a new dataset has `google_ads` instead of `social_media`, charts adapt without code changes
+- The reference date for pipeline aging comes from the latest timestamp in the dataset
 
-Each sentence gets its own row with an appropriate icon. The goal is that a branch manager can scan the summary in 5 seconds and immediately see what needs action.
+
+### Success = Order Placed, Not Just Delivered
+A sales rep's primary job ends when the customer places an order. The time between `order_placed` and `delivered` is often an operational bottleneck (financing, logistics) outside their control. Therefore, the conversion rate and revenue attribution for representatives count both `order_placed` and `delivered` as successes. Consequently, `order_placed` deals are excluded from "Cold Lead" aging alerts, ensuring reps are evaluated fairly.
+
+### Executive-Focused UI Choices
+The interface prioritizes information density and structured readability. The Natural Language Summaries are broken into color-coded sections (Green for positive, Red for risks) with distinct icons rather than dense paragraphs. I deliberately reduced vertical spacing and padding across components to ensure executives can scan maximum critical information on a single screen without excessive scrolling.
+
+### Multi-Metric Rep Analysis
+Evaluating a sales representative purely on conversion rate is dangerous, as it rewards low-volume behaviors over net revenue generation. The Representative Leaderboard is highly interactive and sortable, allowing managers to evaluate reps across multiple dimensions: Total Leads, Successes, Conversion %, and Revenue.
+
+### Algorithmic Precision and Rendering
+When calculating the core financial algorithms (e.g., aggregating pipeline values or total revenue), the engine relies on pure, untruncated operations to guarantee math accuracy. 
+
+### Dynamic Data Upload
+To make the dashboard a true product rather than a static assignment, I built a `DataUploader` component. Users can drop any schema-compliant JSON file into the sidebar, and the application instantly parses it, resets all active date filters, and re-renders the entire reporting suite dynamically.
+
+### Delivery Delay Visibility
+Securing an order is only half the battle. I implemented a Delivery Delays module that isolates delayed deliveries and aggregates them by reason (e.g., Financing Delay, Inventory Shortage). Highlighting these operational bottlenecks allows managers to unlock stuck revenue that the sales team has already worked to capture.
+
 
 ---
 
-## Technology Stack
+## Technical Choices
 
-| Layer | Choice | Why |
-|-------|--------|-----|
-| Framework | Next.js 16 (App Router) | File-based routing, React Server Components for layout perf |
-| State | Zustand | Lightweight, zero boilerplate, great DX |
-| Charts | Recharts | Composable, React-native, handles responsive layouts |
-| Styling | CSS Variables + Tailwind v4 | Design tokens for light/dark theming |
-| Types | TypeScript (strict) | Compile-time safety for data transformations |
-| Dates | date-fns | Tree-shakeable, immutable, no timezone surprises |
+| Layer | Choice | Rationale |
+|-------|--------|-----------|
+| Framework | Next.js 16 (App Router) | File-based routing maps naturally to the three-level drill-down. React Server Components handle layout rendering |
+| State | Zustand | Single store for dataset, filters, theme, and UI state. Minimal API, no boilerplate, works cleanly with App Router |
+| Charts | Recharts | Composable, React-native, handles responsive containers. Pairs well with the component architecture |
+| Styling | CSS Variables + Tailwind v4 | Design tokens enable the light/dark theme toggle. CSS variables for colors, radii, and spacing keep the system consistent |
+| Types | TypeScript (strict mode) | Compile-time safety across all data transformations — the calculation layer handles ~15 computed types |
+| Dates | date-fns | Tree-shakeable, immutable operations. Date ranges use `YYYY-MM` string format since all operations are month-granular, avoiding timezone edge cases |
+| Client-side processing | All computation in-browser | Dataset is <5MB. Client-side filtering and aggregation runs in <10ms — no loading states, no server round-trips for filter changes |
 
 ---
 
 ## What I'd Build Next
 
-If this were evolving into a production product:
-
-1. **Live data integration** — Replace static JSON with a WebSocket pipeline from the dealership CRM. The Zustand store already accepts `setData()`, so the rendering layer doesn't change.
-2. **Multi-tenant isolation** — Each dealership network gets its own data. The dataset-agnostic architecture means the code doesn't need per-tenant customization.
-3. **Scheduled alerts** — The alert engine already generates structured `Alert` objects with severity levels. Adding a delivery layer which sends email/Slack notifications can be beneficial to business.
-4. **PDF export** — The summary + KPIs would make a good board report. The deterministic engine ensures consistent quality across exports.
-5. **Field-optimized mobile view** — Current layout is responsive, but a dedicated mobile experience would prioritize pipeline alerts and overdue follow-ups for managers on the go.
+1. **Live CRM Integration** — Replace static JSON with a WebSocket pipeline. The Zustand store already accepts `setData()`, so the rendering layer doesn't change
+2. **Multi-tenant Isolation** — Each dealership network gets its own data. The dataset-agnostic architecture means zero per-tenant customization
+3. **Scheduled Alert Delivery** — The alert engine already produces structured `Alert` objects with severity levels. Adding email/Slack delivery is a thin transport layer
+4. **PDF Export** — The NL summaries + KPIs are structured enough to render directly into a board-ready report
+5. **Mobile-First Field View** — A dedicated mobile layout prioritizing pipeline alerts and overdue follow-ups for branch managers on the go
 
 ---
 
-## Interesting Data Patterns Observed
+## Interesting Patterns in the Data
 
-By running the provided dataset through the dashboard's deterministic analytics engine, several clear operational patterns emerge
+Running the dataset through the analytics engine surfaced several actionable patterns:
 
-1. **The "Social Media" Drop-off:** Across almost all branches, leads originating from 'Social Media' have significantly worse final conversion rates than 'Walk-in' leads. For example, the alert engine repeatedly fires a warning that Social Media converts at roughly ~14%, compared to Walk-in which closes at ~45%.
-2. **The "Price Too High" Bottleneck:** The primary reason deals are lost across the entire network is consistently `"Price too high"`. It accounts for the vast majority of lost deals. This insight is computed by the lost reasons module, suggesting the need for either better early-stage lead qualification or modified pricing strategies.
-3. **The Critical "Negotiation" Stage:** Looking at the unified Conversion Funnel, the largest immediate drop-off almost always occurs right after the `Test Drive` phase, specifically attempting to convert a test drive into an `Order Placed`. The `Negotiation` stage is highly volatile.
+1. **Social Media Converts Poorly** — Across branches, Social Media leads convert at ~14% vs Walk-in at ~45%. The gap is consistent enough to question ad spend allocation
+2. **"Price Too High" Dominates Lost Reasons** — It accounts for the largest share of lost deals network-wide, suggesting either a lead qualification problem (wrong customers entering the funnel) or a pricing strategy gap
+3. **The Negotiation Cliff** — The steepest funnel drop-off occurs at Test Drive → Order Placed. The negotiation stage is where deals die — this is the highest-leverage stage for sales training investment
+4. **Revenue vs Conversion Paradox** — Some reps have the highest revenue despite middling conversion rates (they close fewer but larger deals), while others convert at 100% on low-value leads. The leaderboard surfaces both metrics side-by-side to prevent optimizing for the wrong number
 
 ---
 
